@@ -69,7 +69,8 @@ enum LaunchPlanBuilder {
                       account: MicrosoftAccount,
                       accessToken: String,
                       memoryMB: Int,
-                      maxHeapMB: Int = 4096) throws -> LaunchPlan {
+                      maxHeapMB: Int = 4096,
+                      userType: String = "msa") throws -> LaunchPlan {
         guard let rawMainClass = detail.mainClass?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawMainClass.isEmpty else {
@@ -104,7 +105,8 @@ enum LaunchPlanBuilder {
             classpath: classpathString,
             assetsIndexName: detail.assetIndexName,
             width: nil,
-            height: nil
+            height: nil,
+            userType: userType
         )
 
         var jvmArguments = [

@@ -75,10 +75,10 @@ struct LaunchSheet: View {
     private var summaryCard: some View {
         YZLCard {
             HStack(spacing: 14) {
-                AvatarView(size: 54, account: appState.account)
+                AvatarView(size: 54, account: appState.displayAccount)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(appState.account?.name ?? "未登录")
+                    Text(appState.displayAccount?.name ?? "未登录")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(YZLTheme.text)
                     Text(appState.launchPlanSummary ?? "正在生成启动参数…")
@@ -130,7 +130,7 @@ struct LaunchSheet: View {
         case .failed(let message):
             banner(
                 icon: "exclamationmark.triangle.fill",
-                title: appState.account == nil ? "需要先登录" : "启动条件未满足",
+                title: appState.displayAccount == nil ? "需要先选择账号" : "启动条件未满足",
                 message: appState.launchErrorMessage ?? message,
                 tint: YZLTheme.danger,
                 background: Color(red: 0.996, green: 0.925, blue: 0.925)
@@ -277,7 +277,7 @@ struct LaunchSheet: View {
     }
 
     private var needsLogin: Bool {
-        appState.account == nil || appState.launchChecks.contains {
+        appState.displayAccount == nil || appState.launchChecks.contains {
             $0.id == "session" && $0.status == .failed
         }
     }

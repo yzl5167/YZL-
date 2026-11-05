@@ -40,6 +40,11 @@ final class AppState: ObservableObject {
         didSet { persistSelectedVersion() }
     }
     @Published var account: MicrosoftAccount?
+
+    /// 离线（伪正版）账号列表：不需要微软令牌，单人 / LAN 直接进入游戏。
+    @Published var offlineAccounts: [OfflineAccount] = []
+    /// 当前用于显示与启动的账号 id（正版或离线）。nil 表示未选择任何账号。
+    @Published var activeAccountID: String?
     @Published var jitStatus: JITStatus = .unknown
     @Published var javaStatus: JavaRuntimeStatus = .missing
     @Published var engineStatus: EngineStatus = .notInstalled
@@ -72,6 +77,7 @@ final class AppState: ObservableObject {
     private var launchTask: Task<Void, Never>?
 
     private static let selectedVersionKey = "yzl.selectedVersion"
+    private static let activeAccountKey = "yzl.activeAccount"
 
     init() {
         installedVersions = installedStore.load()
@@ -86,11 +92,16 @@ final class AppState: ObservableObject {
         engineStatus = engine.isAvailable ? .ready(engine.name) : .notInstalled
         detectJavaRuntime()
 
+        // 离线账号与当前选中账号都从本机持久化恢复。
+        offlineAccounts = OfflineAccountStore().load()
+        restoreActiveAccount()
+
         guard let stored = sessionStore.load() else { return }
         session = stored
 
         if stored.expiresAt > Date() {
             account = stored.account
+            restoreActiveAccount()
             return
         }
 
@@ -104,6 +115,7 @@ final class AppState: ObservableObject {
                 self.sessionStore.save(renewed)
                 self.session = renewed
                 self.account = renewed.account
+                self.restoreActiveAccount()
             } catch {
                 // 续期失败时保持未登录，用户仍可手动登录。
             }
@@ -140,6 +152,8 @@ final class AppState: ObservableObject {
                 self.sessionStore.save(session)
                 self.session = session
                 self.account = session.account
+                self.activeAccountID = session.account.id
+                self.persistActiveAccount()
                 self.authPhase = .idle
                 self.isAuthSheetVisible = false
             } catch is CancellationError {
@@ -161,10 +175,98 @@ final class AppState: ObservableObject {
     func signOut() {
         restoreTask?.cancel()
         restoreTask = nil
+        let microsoftID = session?.account.id ?? account?.id
         sessionStore.clear()
         session = nil
         account = nil
         authPhase = .idle
+        // 退出正版后若当前正用它启动，则自动退到离线账号（若有）。
+        if activeAccountID == microsoftID {
+            activeAccountID = offlineAccounts.first?.id
+            persistActiveAccount()
+        }
+    }
+
+    // MARK: - 统一账号（正版 / 离线）
+
+    /// 把 `activeAccountID` 解析成具体的正版或离线档案；解析不到返回 nil。
+    private func accountInfo(for id: String?) -> (microsoft: MicrosoftAccount?, offline: OfflineAccount?)? {
+        guard let id else { return nil }
+        if let acc = account, acc.id == id { return (acc, nil) }
+        if let off = offlineAccounts.first(where: { $0.id == id }) { return (nil, off) }
+        return nil
+    }
+
+    /// 用于头像 / 名字展示：正版优先，否则退到离线账号。
+    var displayAccount: MicrosoftAccount? {
+        guard let info = accountInfo(for: activeAccountID) else { return nil }
+        return info.microsoft ?? info.offline?.asMicrosoftAccount
+    }
+
+    /// 当前选中的离线账号（若有）。
+    var activeOfflineAccount: OfflineAccount? {
+        accountInfo(for: activeAccountID)?.offline
+    }
+
+    /// 启动用的统一档案：正版直接取，离线则套一层 MicrosoftAccount。
+    var launchAccount: MicrosoftAccount? { displayAccount }
+
+    /// 是否处于离线（伪正版）启动模式。
+    var isOfflineLaunch: Bool {
+        accountInfo(for: activeAccountID)?.offline != nil
+    }
+
+    /// 是否存在任何可用于启动的账号（正版或离线）。
+    var hasAnyAccount: Bool {
+        accountInfo(for: activeAccountID) != nil
+    }
+
+    private func restoreActiveAccount() {
+        let saved = UserDefaults.standard.string(forKey: Self.activeAccountKey)
+        if let saved, accountInfo(for: saved) != nil {
+            activeAccountID = saved
+        } else if account != nil {
+            activeAccountID = account?.id
+        } else {
+            activeAccountID = offlineAccounts.first?.id
+        }
+        persistActiveAccount()
+    }
+
+    private func persistActiveAccount() {
+        UserDefaults.standard.set(activeAccountID, forKey: Self.activeAccountKey)
+    }
+
+    // MARK: - 离线（伪正版）账号管理
+
+    /// 新增一个离线账号，并设为当前启动账号。
+    func createOfflineAccount(name: String, skinModel: String = "steve", skinURL: String? = nil) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let newAccount = OfflineAccount(name: trimmed, skinModel: skinModel, skinURL: skinURL)
+        if !offlineAccounts.contains(where: { $0.id == newAccount.id }) {
+            offlineAccounts.append(newAccount)
+        }
+        OfflineAccountStore().save(offlineAccounts)
+        activeAccountID = newAccount.id
+        persistActiveAccount()
+    }
+
+    /// 选择某个账号（正版 id 或离线 id）作为当前启动账号。
+    func selectActiveAccount(id: String) {
+        guard accountInfo(for: id) != nil else { return }
+        activeAccountID = id
+        persistActiveAccount()
+    }
+
+    /// 删除一个离线账号；若它正被使用则回退到其它账号。
+    func removeOfflineAccount(id: String) {
+        offlineAccounts.removeAll { $0.id == id }
+        OfflineAccountStore().save(offlineAccounts)
+        if activeAccountID == id {
+            activeAccountID = offlineAccounts.first?.id ?? account?.id
+            persistActiveAccount()
+        }
     }
 
     // MARK: - Installed versions
@@ -222,13 +324,13 @@ final class AppState: ObservableObject {
     var launchButtonTitle: String {
         guard let selectedVersion else { return "下载游戏" }
         guard isInstalled(selectedVersion.id) else { return "下载游戏" }
-        return account == nil ? "登录微软账户" : "启动游戏"
+        return hasAnyAccount ? "启动游戏" : "登录 / 离线账号"
     }
 
     var launchButtonIcon: String {
         guard let selectedVersion else { return "arrow.down.circle.fill" }
         guard isInstalled(selectedVersion.id) else { return "arrow.down.circle.fill" }
-        return account == nil ? "person.crop.circle.fill" : "play.fill"
+        return hasAnyAccount ? "play.fill" : "person.crop.circle.fill"
     }
 
     /// 主页大按钮的统一入口：没选版本先去版本页；版本没装好直接开始下载；
@@ -243,7 +345,7 @@ final class AppState: ObservableObject {
             selectedTab = .versions
             return
         }
-        guard account != nil else {
+        guard hasAnyAccount else {
             overlay = .account
             return
         }
@@ -361,19 +463,19 @@ final class AppState: ObservableObject {
         detectJIT()
         engineStatus = engine.isAvailable ? .ready(engine.name) : .notInstalled
 
-        guard let account else {
+        guard let launchAccount else {
             checks.append(LaunchCheck(
                 id: "account",
-                title: "微软账户",
-                detail: "尚未登录，启动前需要正版账户令牌。",
+                title: "账号",
+                detail: "尚未选择账号，请到「账号」里登录正版或添加离线账号。",
                 status: .failed
             ))
             return LaunchReadiness(checks: checks, plan: nil)
         }
         checks.append(LaunchCheck(
             id: "account",
-            title: "微软账户",
-            detail: "\(account.name) · \(account.id)",
+            title: "账号",
+            detail: "\(launchAccount.name) · \(isOfflineLaunch ? "离线（伪正版）" : "微软正版")",
             status: .ok
         ))
 
@@ -495,21 +597,33 @@ final class AppState: ObservableObject {
             ))
         }
 
-        let validSession = await freshSession()
-        if let validSession {
+        let isOffline = isOfflineLaunch
+        var validSession: StoredSession?
+        if isOffline {
+            // 离线（伪正版）模式根本不碰微软令牌：用固定离线 UUID 直接进入单机 / LAN。
             checks.append(LaunchCheck(
                 id: "session",
                 title: "登录令牌",
-                detail: "有效，Minecraft 令牌到期时间 \(Self.timeText(validSession.expiresAt))",
+                detail: "离线（伪正版）模式：无需微软令牌，单机 / 局域网可用。在线正版服务器会拒绝，属预期。",
                 status: .ok
             ))
         } else {
-            checks.append(LaunchCheck(
-                id: "session",
-                title: "登录令牌",
-                detail: "访问令牌已过期且续期失败，请重新登录。",
-                status: .failed
-            ))
+            validSession = await freshSession()
+            if let validSession {
+                checks.append(LaunchCheck(
+                    id: "session",
+                    title: "登录令牌",
+                    detail: "有效，Minecraft 令牌到期时间 \(Self.timeText(validSession.expiresAt))",
+                    status: .ok
+                ))
+            } else {
+                checks.append(LaunchCheck(
+                    id: "session",
+                    title: "登录令牌",
+                    detail: "访问令牌已过期且续期失败，请重新登录。",
+                    status: .failed
+                ))
+            }
         }
 
         if javaStatus.isReady {
@@ -583,16 +697,20 @@ final class AppState: ObservableObject {
         ))
 
         var plan: LaunchPlan?
-        if let validSession {
+        let offlineToken = "offline"
+        let accessToken = isOffline ? offlineToken : (validSession?.accessToken ?? "")
+        let userType = isOffline ? "mojang" : "msa"
+        if isOffline || validSession != nil {
             do {
                 plan = try LaunchPlanBuilder.build(
                     detail: detail,
                     version: version,
                     layout: layout,
-                    account: account,
-                    accessToken: validSession.accessToken,
+                    account: launchAccount,
+                    accessToken: accessToken,
                     memoryMB: memory,
-                    maxHeapMB: cap
+                    maxHeapMB: cap,
+                    userType: userType
                 )
             } catch {
                 checks.append(LaunchCheck(

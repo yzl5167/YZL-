@@ -12,7 +12,7 @@ struct SkinView: View {
 
                 ScrollView {
                     VStack(spacing: 14) {
-                        if let account = appState.account {
+                        if let account = appState.displayAccount {
                             accountCard(account)
                             skinCard(account)
                             noticeCard
@@ -35,7 +35,7 @@ struct SkinView: View {
                 Text("皮肤")
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(YZLTheme.text)
-                Text("读取当前微软账号的皮肤与纹理 URL")
+                Text("读取当前账号的皮肤与纹理 URL")
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
             }

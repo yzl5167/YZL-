@@ -5,6 +5,7 @@ struct AccountView: View {
     @EnvironmentObject private var appState: AppState
     let onBack: () -> Void
     @State private var showSignOutConfirm = false
+    @State private var showOfflineCreate = false
 
     var body: some View {
         ZStack {
@@ -20,6 +21,7 @@ struct AccountView: View {
                         } else {
                             emptyCard
                         }
+                        offlineSection
                         privacyCard
                     }
                     .padding(.horizontal, 24)
@@ -42,6 +44,10 @@ struct AccountView: View {
             }
         } message: {
             Text("本机 Keychain 中保存的微软登录令牌会被删除。")
+        }
+        .sheet(isPresented: $showOfflineCreate) {
+            OfflineCreateSheet()
+                .environmentObject(appState)
         }
     }
 
@@ -127,19 +133,38 @@ struct AccountView: View {
                 .padding(.horizontal, 16)
 
             HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("正在使用")
-                        .font(.system(size: 13, weight: .semibold))
+                if microsoftIsActive {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("正在使用")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(YZLTheme.success)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(YZLTheme.successSoft)
+                    )
+                } else {
+                    Button {
+                        if let id = appState.account?.id {
+                            appState.selectActiveAccount(id: id)
+                        }
+                    } label: {
+                        Text("设为当前启动")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(YZLTheme.accentText)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(YZLTheme.accentSoft)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .foregroundStyle(YZLTheme.success)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(YZLTheme.successSoft)
-                )
 
                 Button {
                     showSignOutConfirm = true
@@ -187,7 +212,7 @@ struct AccountView: View {
                     Text("还没有登录账号")
                         .font(.system(size: 19, weight: .bold))
                         .foregroundStyle(YZLTheme.text)
-                    Text("登录微软账户后，启动器会读取 Minecraft: Java Edition 档案。")
+                    Text("登录微软账户后，启动器会读取 Minecraft: Java Edition 档案。没有正版账号也能玩：在下方「离线账号」里添加一个，即可下载并单机启动。")
                         .font(.system(size: 11))
                         .foregroundStyle(YZLTheme.muted)
                 }
@@ -212,6 +237,90 @@ struct AccountView: View {
                 .foregroundStyle(YZLTheme.muted)
                 .lineSpacing(4)
         }
+    }
+
+    private var microsoftIsActive: Bool {
+        guard let id = appState.account?.id else { return false }
+        return appState.activeAccountID == id
+    }
+
+    private var offlineSection: some View {
+        YZLCard(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text("离线账号（伪正版）")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(YZLTheme.text)
+                    Spacer()
+                    Button {
+                        showOfflineCreate = true
+                    } label: {
+                        Label("添加", systemImage: "plus")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .frame(height: 32)
+                }
+
+                Text("不需要微软账号，用固定离线 UUID 直接进入单机 / 局域网。在线正版服务器会拒绝，属预期。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(4)
+
+                if appState.offlineAccounts.isEmpty {
+                    Text("还没有离线账号。点「添加」创建一个，例如 Steve、Alex。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(YZLTheme.lightMuted)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(appState.offlineAccounts) { off in
+                        offlineRow(off)
+                    }
+                }
+            }
+        }
+    }
+
+    private func offlineRow(_ off: OfflineAccount) -> some View {
+        let isActive = appState.activeAccountID == off.id
+        return HStack(spacing: 12) {
+            AvatarView(size: 42, account: off.asMicrosoftAccount)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(off.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(YZLTheme.text)
+                    if isActive {
+                        StatusBadge(text: "当前", tone: .success)
+                    }
+                }
+                Text(off.skinModel)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(YZLTheme.muted)
+            }
+            Spacer()
+            if !isActive {
+                Button {
+                    appState.selectActiveAccount(id: off.id)
+                } label: {
+                    Text("使用")
+                }
+                .buttonStyle(PrimaryButtonStyle(prominent: false))
+                .frame(width: 64, height: 34)
+            }
+            Button {
+                appState.removeOfflineAccount(id: off.id)
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(YZLTheme.danger)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 34, height: 34)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(YZLTheme.field)
+        )
     }
 
     private var shortUUID: String {
@@ -396,5 +505,76 @@ private struct LoginSheet: View {
             .frame(maxWidth: 380)
         }
         .padding(32)
+    }
+}
+
+// MARK: - 离线账号创建
+
+private struct OfflineCreateSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = ""
+    @State private var skinModel = "steve"
+    @State private var customSkinURL = ""
+
+    private let models = ["steve", "alex", "custom"]
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("角色名") {
+                    TextField("例如 Steve / Alex / 你的名字", text: $name)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                Section("皮肤模型") {
+                    Picker("皮肤模型", selection: $skinModel) {
+                        ForEach(models, id: \.self) { model in
+                            Text(modelLabel(model)).tag(model)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    if skinModel == "custom" {
+                        TextField("皮肤贴图 URL（可选）", text: $customSkinURL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                }
+                Section {
+                    Text("离线账号用固定算法从角色名算出 UUID，单机 / 局域网直接进入。无需微软账号，但无法进入在线正版服务器。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineSpacing(4)
+                }
+            }
+            .navigationTitle("添加离线账号")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("创建") { create() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func modelLabel(_ model: String) -> String {
+        switch model {
+        case "steve": return "Steve"
+        case "alex": return "Alex"
+        default: return "自定义"
+        }
+    }
+
+    private func create() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let url: String? = skinModel == "custom" ? customSkinURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        appState.createOfflineAccount(name: trimmedName, skinModel: skinModel, skinURL: url)
+        dismiss()
     }
 }

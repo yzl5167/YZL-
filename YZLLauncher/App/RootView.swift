@@ -123,11 +123,7 @@ private struct YZLSidebar: View {
 
     private var brand: some View {
         VStack(spacing: 5) {
-            Image("BrandIcon")
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 42, height: 42)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            YzlLogoMark(size: 42)
             Text("YZL")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(YZLTheme.muted)
@@ -163,9 +159,9 @@ private struct YZLSidebar: View {
             appState.overlay = .account
         } label: {
             VStack(spacing: 4) {
-                AvatarView(size: 38, account: appState.account)
+                AvatarView(size: 38, account: appState.displayAccount)
 
-                Text(appState.account?.name ?? "未登录")
+                Text(appState.displayAccount?.name ?? "未登录")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(appState.overlay == .account ? YZLTheme.accentText : YZLTheme.muted)
                     .lineLimit(1)

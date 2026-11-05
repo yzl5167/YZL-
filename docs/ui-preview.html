@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YZL 启动器 iOS · 界面预览</title>
+<style>
+  :root{
+    --page:#F4F6FB;
+    --card:#FFFFFF;
+    --field:#F8FAFE;
+    --text:#253044;
+    --muted:#7C8AA0;
+    --light-muted:#A2ABBC;
+    --border:#E4E9F2;
+    --accent:#3B82F6;
+    --accent-dark:#2F6FE0;
+    --accent-soft:#EAF1FF;
+    --success:#22C55E;
+    --success-soft:#E9F9EF;
+    --danger:#EF4444;
+    --danger-soft:#FCE8E8;
+    --warn-text:#B26A00;
+    --warn-soft:#FFF2DC;
+    --grad:linear-gradient(135deg,#5AA2FF 0%,#2F6FE0 100%);
+    --sf:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;}
+  body{
+    font-family:var(--sf);
+    background:radial-gradient(1200px 700px at 20% -10%,#EAF1FF 0%,#F4F6FB 45%,#EEF1F7 100%);
+    color:var(--text);
+    min-height:100vh;
+    padding:48px 24px 64px;
+  }
+  .topbar{max-width:1180px;margin:0 auto 36px;}
+  .topbar h1{font-size:28px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:12px;}
+  .brandchip{width:34px;height:34px;border-radius:9px;background:var(--grad);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 6px 16px rgba(47,111,224,.35);}
+  .topbar p{margin-top:8px;color:var(--muted);font-size:14px;max-width:760px;line-height:1.6;}
+  .topbar .swatches{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;}
+  .sw{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:20px;padding:5px 11px;}
+  .sw i{width:14px;height:14px;border-radius:4px;display:inline-block;}
+  .stage{max-width:1180px;margin:0 auto;display:flex;gap:40px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+
+  /* ---------- 设备外框 ---------- */
+  .device{background:#0B0E14;border-radius:54px;padding:14px;box-shadow:0 30px 70px rgba(16,21,31,.28),inset 0 0 0 2px #2a2f3a;position:relative;}
+  .device.iphone{width:392px;}
+  .device.ipad{width:760px;}
+  .screen{background:var(--page);border-radius:42px;overflow:hidden;position:relative;}
+  .iphone .screen{height:824px;}
+  .ipad .screen{height:560px;}
+  .island{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:120px;height:32px;background:#000;border-radius:18px;z-index:30;}
+  .ipad .island{width:14px;height:14px;border-radius:50%;top:18px;}
+
+  /* ---------- 内部布局：左导航 + 内容 ---------- */
+  .app{display:flex;height:100%;}
+  .rail{width:84px;flex:0 0 84px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:18px 0 14px;}
+  .rail .logo{width:42px;height:42px;border-radius:11px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 6px 14px rgba(47,111,224,.35);margin-bottom:18px;}
+  .navitem{width:64px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 0;border-radius:12px;color:var(--muted);font-size:10px;font-weight:600;margin-bottom:2px;}
+  .navitem.active{background:var(--accent-soft);color:var(--accent);}
+  .navitem .ico{font-size:20px;line-height:1;}
+  .rail .spacer{flex:1;}
+  .rail .avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#9ED0FF,#3B82F6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.12);margin-bottom:6px;}
+  .rail .about{font-size:10px;color:var(--muted);margin-bottom:10px;}
+
+  .content{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--page);}
+  .scroll{overflow:auto;flex:1;padding:18px 22px 26px;}
+
+  /* ---------- 首页 ---------- */
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:6px;}
+  .ava-big{width:104px;height:104px;border-radius:50%;background:linear-gradient(135deg,#9ED0FF,#3B82F6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:32px;position:relative;box-shadow:0 10px 26px rgba(47,111,224,.30);}
+  .ava-big .edit{position:absolute;right:-2px;bottom:-2px;width:30px;height:30px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+  .hero h2{font-size:21px;font-weight:800;margin-top:12px;}
+  .hero .sub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+  .ver-row{display:flex;align-items:center;gap:11px;height:48px;padding:0 16px;margin-top:16px;background:#fff;border:1px solid var(--border);border-radius:13px;}
+  .grass{width:34px;height:34px;border-radius:7px;background:linear-gradient(#7CC46B 0 38%,#6B4A2F 38% 100%);position:relative;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25);}
+  .ver-row .lbl{font-size:12px;color:var(--muted);}
+  .ver-row .val{font-size:15px;font-weight:700;}
+  .ver-row .badge{margin-left:auto;font-size:10px;font-weight:700;color:var(--success);background:var(--success-soft);padding:4px 9px;border-radius:20px;}
+  .ver-row .chev{color:var(--light-muted);font-size:13px;margin-left:6px;}
+
+  .launch-btn{margin-top:13px;height:52px;border-radius:13px;background:var(--grad);color:#fff;font-size:18px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 12px 26px rgba(47,111,224,.34);}
+  .row2{display:flex;gap:12px;margin-top:11px;}
+  .sec{flex:1;height:42px;border-radius:11px;background:#fff;border:1px solid var(--border);color:var(--accent-dark);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:7px;}
+
+  .prog{margin-top:13px;background:#fff;border:1px solid var(--border);border-radius:13px;padding:13px;}
+  .prog .top{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;color:var(--text);}
+  .prog .top .count{color:var(--muted);font-weight:600;}
+  .bar{height:7px;border-radius:6px;background:var(--field);margin-top:9px;overflow:hidden;}
+  .bar > i{display:block;height:100%;width:64%;background:var(--grad);border-radius:6px;}
+  .prog .meta{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:8px;}
+  .prog .meta .cancel{color:var(--danger);font-weight:700;}
+
+  .pills{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+  .pill{display:flex;gap:5px;font-size:9.5px;font-weight:600;color:var(--muted);background:var(--field);padding:5px 9px;border-radius:20px;}
+  .pill b{color:var(--muted);font-weight:700;}
+
+  /* ---------- 版本管理（双栏） ---------- */
+  .ver-head{padding:16px 20px 10px;}
+  .ver-head h2{font-size:22px;font-weight:800;}
+  .ver-head p{font-size:11px;color:var(--muted);margin-top:3px;}
+  .master{width:300px;flex:0 0 300px;border-right:1px solid var(--border);display:flex;flex-direction:column;}
+  .filter{padding:6px 14px 10px;}
+  .filtop{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);}
+  .seg{display:flex;background:var(--field);border-radius:9px;padding:3px;}
+  .seg span{font-size:11px;padding:4px 10px;border-radius:7px;color:var(--muted);font-weight:600;}
+  .seg span.on{background:#fff;color:var(--accent-dark);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .search{display:flex;align-items:center;gap:7px;margin-top:9px;height:34px;padding:0 11px;background:var(--field);border-radius:9px;font-size:12px;color:var(--muted);}
+  .list{flex:1;overflow:auto;}
+  .vrow{display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid var(--border);}
+  .vrow.sel{background:var(--accent-soft);}
+  .vrow .id{font-size:14px;font-weight:700;}
+  .vrow .sub{font-size:11px;color:var(--muted);}
+  .vrow .b{margin-left:auto;font-size:10px;font-weight:700;color:var(--success);background:var(--success-soft);padding:3px 8px;border-radius:20px;}
+  .vrow .b.cur{color:var(--warn-text);background:var(--warn-soft);}
+
+  .detail{flex:1;overflow:auto;padding:18px 20px;}
+  .dhead{display:flex;align-items:center;gap:12px;}
+  .dhead .grass{width:44px;height:44px;}
+  .dhead h3{font-size:20px;font-weight:800;}
+  .dhead p{font-size:11px;color:var(--muted);}
+  .dhead .play{margin-left:auto;background:var(--accent);color:#fff;font-size:12px;font-weight:700;padding:7px 13px;border-radius:20px;display:flex;gap:5px;align-items:center;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px;margin-top:14px;}
+  .card h4{font-size:13px;font-weight:700;margin-bottom:9px;}
+  .card p{font-size:10.5px;color:var(--muted);line-height:1.6;margin-bottom:10px;}
+  .install-btn{height:44px;border-radius:11px;background:var(--grad);color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 10px 22px rgba(47,111,224,.30);}
+  .ir{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;color:var(--muted);}
+  .ir b{color:var(--text);font-weight:600;}
+  .ir.div{border-top:1px solid var(--border);}
+
+  /* ---------- 启动遮罩 ---------- */
+  .sheet{position:absolute;inset:0;background:rgba(244,246,251,.86);backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:40;}
+  .ring{width:64px;height:64px;border-radius:50%;border:5px solid var(--accent-soft);border-top-color:var(--accent);animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .sheet h3{margin-top:20px;font-size:18px;font-weight:800;}
+  .sheet p{margin-top:6px;font-size:12px;color:var(--muted);}
+  .sheet .log{margin-top:16px;width:240px;background:#fff;border:1px solid var(--border);border-radius:11px;padding:12px;font-size:10.5px;color:var(--muted);line-height:1.8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .sheet .log b{color:var(--success);}
+
+  .caption{max-width:1180px;margin:34px auto 0;color:var(--muted);font-size:12.5px;line-height:1.7;text-align:center;}
+  .caption code{background:#fff;border:1px solid var(--border);border-radius:6px;padding:1px 6px;color:var(--accent-dark);font-size:11.5px;}
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <h1><span class="brandchip">YZL</span> 启动器 iOS · 界面预览</h1>
+    <p>按现有 SwiftUI 结构（左侧品牌导航 + 首页 / 版本管理双栏）用 YZL 跨端规范色值还原的真机外观。色彩与 Android 端 <code>colors.xml</code> 完全一致，整体气质对齐 YZL 启动器本体。</p>
+    <div class="swatches">
+      <span class="sw"><i style="background:#3B82F6"></i>accent #3B82F6</span>
+      <span class="sw"><i style="background:linear-gradient(135deg,#5AA2FF,#2F6FE0)"></i>brand #5AA2FF→#2F6FE0</span>
+      <span class="sw"><i style="background:#F4F6FB"></i>page #F4F6FB</span>
+      <span class="sw"><i style="background:#22C55E"></i>success #22C55E</span>
+      <span class="sw"><i style="background:#10151F"></i>dark #10151F</span>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- iPhone 首页 -->
+    <div class="device iphone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="app">
+          <div class="rail">
+            <div class="logo">YZL</div>
+            <div class="navitem active"><span class="ico">🏠</span>首页</div>
+            <div class="navitem"><span class="ico">📚</span>版本</div>
+            <div class="navitem"><span class="ico">🧍</span>皮肤</div>
+            <div class="navitem"><span class="ico">⚙️</span>设置</div>
+            <div class="spacer"></div>
+            <div class="avatar">S</div>
+            <div class="about">关于</div>
+          </div>
+          <div class="content">
+            <div class="scroll">
+              <div class="hero">
+                <div class="ava-big">S<span class="edit">✎</span></div>
+                <h2>Steve</h2>
+                <div class="sub">微软正版账号 · 已登录</div>
+              </div>
+
+              <div class="ver-row">
+                <div class="grass"></div>
+                <div>
+                  <div class="lbl">当前版本</div>
+                  <div class="val">1.21.10</div>
+                </div>
+                <span class="badge">已安装</span>
+                <span class="chev">›</span>
+              </div>
+
+              <div class="launch-btn">▶ 启动游戏</div>
+
+              <div class="row2">
+                <div class="sec">📚 版本管理</div>
+                <div class="sec">⬇ 下载游戏</div>
+              </div>
+
+              <div class="prog">
+                <div class="top"><span>正在安装 1.21.10</span><span class="count">412 / 648</span></div>
+                <div class="bar"><i></i></div>
+                <div class="meta"><span>286.4 MB / 447.1 MB · 11.2 MB/s</span><span class="cancel">取消</span></div>
+              </div>
+
+              <div class="pills">
+                <span class="pill"><b>版本</b> 已安装</span>
+                <span class="pill"><b>JIT</b> 自动</span>
+                <span class="pill"><b>Java</b> 21</span>
+                <span class="pill"><b>引擎</b> 就绪</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- iPad 版本管理 -->
+    <div class="device ipad">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="app">
+          <div class="rail">
+            <div class="logo">YZL</div>
+            <div class="navitem"><span class="ico">🏠</span>首页</div>
+            <div class="navitem active"><span class="ico">📚</span>版本</div>
+            <div class="navitem"><span class="ico">🧍</span>皮肤</div>
+            <div class="navitem"><span class="ico">⚙️</span>设置</div>
+            <div class="spacer"></div>
+            <div class="avatar">S</div>
+            <div class="about">关于</div>
+          </div>
+          <div class="content">
+            <div class="ver-head">
+              <h2>版本管理</h2>
+              <p>Mojang 版本清单 · 已安装的版本会走启动自检</p>
+            </div>
+            <div class="app" style="height:calc(100% - 78px)">
+              <div class="master">
+                <div class="filter">
+                  <div class="filtop"><span>共 3 个版本</span><div class="seg"><span class="on">正式版</span><span>全部</span></div></div>
+                  <div class="search">🔍 搜索版本号，例如 1.21.10</div>
+                </div>
+                <div class="list">
+                  <div class="vrow sel"><div class="grass"></div><div><div class="id">1.21.10</div><div class="sub">2025-08-26 · 正式版</div></div><span class="b cur">当前</span></div>
+                  <div class="vrow"><div class="grass"></div><div><div class="id">1.21.8</div><div class="sub">2025-07-15 · 正式版</div></div><span class="b">已安装</span></div>
+                  <div class="vrow"><div class="grass" style="background:linear-gradient(#C99BE0 0 38%,#6B4A2F 38%)"></div><div><div class="id">25w34a</div><div class="sub">快照 · 测试版</div></div></div>
+                  <div class="vrow"><div class="grass" style="background:linear-gradient(#C99BE0 0 38%,#6B4A2F 38%)"></div><div><div class="id">1.20.4</div><div class="sub">2023-12-07 · 正式版</div></div><span class="b">已安装</span></div>
+                </div>
+              </div>
+              <div class="detail">
+                <div class="dhead">
+                  <div class="grass"></div>
+                  <div><h3>1.21.10</h3><p>2025-08-26 · 正式版</p></div>
+                  <div class="play">▶ 启动</div>
+                </div>
+                <div class="card">
+                  <h4>开始安装</h4>
+                  <p>整包安装会列出全部文件与真实总字节，全部通过 SHA-1 校验后才写入安装记录。iOS 原生库由引擎在运行时提供。</p>
+                  <div class="install-btn">⤓ 开始安装（447.1 MB）</div>
+                </div>
+                <div class="card">
+                  <h4>版本信息</h4>
+                  <div class="ir"><span>版本类型</span><b>正式版 (release)</b></div>
+                  <div class="ir div"><span>发布日期</span><b>2025-08-26</b></div>
+                  <div class="ir div"><span>所需 Java</span><b>Java 21</b></div>
+                  <div class="ir div"><span>资源来源</span><b>Mojang 官方</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- iPhone 启动遮罩 -->
+    <div class="device iphone">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="app" style="background:var(--page)">
+          <div class="rail">
+            <div class="logo">YZL</div>
+            <div class="navitem active"><span class="ico">🏠</span>首页</div>
+            <div class="navitem"><span class="ico">📚</span>版本</div>
+            <div class="navitem"><span class="ico">🧍</span>皮肤</div>
+            <div class="navitem"><span class="ico">⚙️</span>设置</div>
+            <div class="spacer"></div>
+            <div class="avatar">S</div>
+            <div class="about">关于</div>
+          </div>
+          <div class="content">
+            <div class="sheet">
+              <div class="ring"></div>
+              <h3>正在启动…</h3>
+              <p>1.21.10 · Java 21 · 引擎就绪</p>
+              <div class="log">
+                <b>✓</b> 微软账号校验通过<br/>
+                <b>✓</b> 资源索引校验通过<br/>
+                <b>✓</b> JIT 已激活 (TrollStore)<br/>
+                <span style="color:var(--accent)">▶</span> 正在加载 JVM …
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="caption">
+    三屏分别为：<b>iPhone 首页</b>（账户 / 当前版本 / 启动 / 安装进度 / 状态）、<b>iPad 版本管理</b>（清单 + 详情双栏）、<b>iPhone 启动遮罩</b>（JIT / JVM 加载日志）。<br/>
+    该预览严格对应 <code>YZLLauncher/Theme/YZLTheme.swift</code> 与 <code>Features/Home/HomeView.swift</code>、<code>Features/Versions/VersionsView.swift</code> 的结构与配色。
+  </div>
+
+</body>
+</html>

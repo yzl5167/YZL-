@@ -23,6 +23,9 @@ enum ArgumentResolver {
         let assetsIndexName: String
         let width: Int?
         let height: Int?
+        /// 账号类型：正版走 `"msa"`，离线（伪正版）走 `"mojang"`。
+        /// 默认值保持旧行为，调用方不显式传也能编译。
+        let userType: String = "msa"
     }
 
     /// 解析游戏参数。优先用 `arguments.game`；否则用旧式 `minecraftArguments` 字符串；
@@ -161,7 +164,7 @@ enum ArgumentResolver {
             "--assetIndex", context.assetsIndexName,
             "--uuid", context.uuid,
             "--accessToken", context.accessToken,
-            "--userType", "msa",
+            "--userType", context.userType,
             "--versionType", context.versionType
         ]
         if let width = context.width, let height = context.height {

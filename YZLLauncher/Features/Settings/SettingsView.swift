@@ -80,7 +80,7 @@ struct SettingsView: View {
                 Button {
                     appState.overlay = .account
                 } label: {
-                    Text(appState.account == nil ? "打开账号管理" : "管理账号 · \(appState.account?.name ?? "")")
+                    Text(appState.displayAccount == nil ? "打开账号管理" : "管理账号 · \(appState.displayAccount?.name ?? "")")
                 }
                 .buttonStyle(PrimaryButtonStyle(prominent: false))
             }

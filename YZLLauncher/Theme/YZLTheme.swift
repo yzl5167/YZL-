@@ -20,6 +20,29 @@ enum YZLTheme {
 
     static let cardCorner: CGFloat = 14
     static let controlCorner: CGFloat = 8
+
+    /// YZL 品牌渐变（与 Android `ic_launcher_background` 一致：#5AA2FF → #2F6FE0）。
+    static let brandGradient = LinearGradient(
+        colors: [
+            Color(red: 0.353, green: 0.635, blue: 1.0),
+            Color(red: 0.184, green: 0.435, blue: 0.878)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// 深色调（与 YZL 跨端 `yzl_page_dark` = #10151F 对齐）。
+    static let pageDark = Color(red: 0.063, green: 0.082, blue: 0.122)
+    static let cardDark = Color(red: 0.106, green: 0.129, blue: 0.180)
+    static let textOnDark = Color(red: 0.918, green: 0.937, blue: 0.965)
+    static let mutedOnDark = Color(red: 0.596, green: 0.651, blue: 0.733)
+    static let borderDark = Color(red: 0.180, green: 0.208, blue: 0.267)
+    static let fieldDark = Color(red: 0.149, green: 0.176, blue: 0.231)
+
+    /// 深色下也保持品牌蓝，避免在暗背景上发灰。
+    static func accent(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(red: 0.298, green: 0.561, blue: 0.965) : YZLTheme.accent
+    }
 }
 
 struct PageBackground: View {
