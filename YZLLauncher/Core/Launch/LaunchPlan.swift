@@ -90,7 +90,7 @@ enum LaunchPlanBuilder {
         let ceiling = max(512, maxHeapMB)
         let heap = max(512, min(memoryMB, ceiling))
 
-        let resolverContext = ArgumentResolver.Context(
+        var resolverContext = ArgumentResolver.Context(
             accountName: account.name,
             uuid: account.id,
             accessToken: accessToken,
@@ -105,9 +105,10 @@ enum LaunchPlanBuilder {
             classpath: classpathString,
             assetsIndexName: detail.assetIndexName,
             width: nil,
-            height: nil,
-            userType: userType
+            height: nil
         )
+        // 离线（伪正版）账号走 mojang，正版走 msa；合成初始化器不收此标签参数，故构造后赋值。
+        resolverContext.userType = userType
 
         var jvmArguments = [
             "-Xmx\(heap)M",

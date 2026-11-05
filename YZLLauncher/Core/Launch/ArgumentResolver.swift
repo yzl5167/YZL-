@@ -25,7 +25,9 @@ enum ArgumentResolver {
         let height: Int?
         /// 账号类型：正版走 `"msa"`，离线（伪正版）走 `"mojang"`。
         /// 默认值保持旧行为，调用方不显式传也能编译。
-        let userType: String = "msa"
+        /// 注：用 `var` + 构造后赋值，因为本工程 Swift 工具链的合成成员初始化器
+        /// 不会把带默认值的属性列为可显式传参的标签参数。
+        var userType: String = "msa"
     }
 
     /// 解析游戏参数。优先用 `arguments.game`；否则用旧式 `minecraftArguments` 字符串；
