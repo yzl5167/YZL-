@@ -1,0 +1,139 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "YZLLauncher/**"
+      - "Tests/**"
+      - "project.yml"
+      - "scripts/**"
+      - ".github/workflows/build-ipa.yml"
+
+jobs:
+  # 主产物：设备用未签名 IPA。这一条不依赖测试结果，测试挂了也要拿到包。
+  ipa:
+    name: Device IPA (unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Static preflight
+        run: python3 scripts/preflight.py
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project YZLLauncher.xcodeproj \
+            -scheme YZLLauncher \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            -parallelizeTargets \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build-device.log
+
+      - name: Package IPA
+        run: bash scripts/package-unsigned-ipa.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YZLLauncher-unsigned-ipa
+          path: YZLLauncher-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Build TrollStore package
+        run: |
+          brew install ldid
+          bash scripts/sign-ipa.sh YZLLauncher-unsigned.ipa trollstore
+          ls -lh com.yzl.launcher.tipa
+
+      - name: Upload TIPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YZLLauncher-trollstore-tipa
+          path: com.yzl.launcher.tipa
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-device-log
+          path: build-device.log
+          if-no-files-found: warn
+
+  # 单元测试单独一条 job：失败只标红，不影响上面的包。
+  tests:
+    name: Unit tests (simulator)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Static preflight
+        run: python3 scripts/preflight.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick an installed iPhone simulator
+        id: sim
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list -j devices available \
+            | jq -r '[.devices | to_entries[]
+                      | select(.key | contains("iOS"))
+                      | .value[]?
+                      | select(.name | startswith("iPhone"))]
+                    | last | .udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "没有找到可用的 iPhone 模拟器，跳过测试。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "UDID=$UDID" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            xcrun simctl list devices | grep -i "$UDID" || true
+          fi
+
+      - name: Run unit tests
+        if: steps.sim.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project YZLLauncher.xcodeproj \
+            -scheme YZLLauncher \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.UDID }}" \
+            -derivedDataPath build-test \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log
+
+      - name: Upload test log
+        if: always() && steps.sim.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: test.log
+          if-no-files-found: warn

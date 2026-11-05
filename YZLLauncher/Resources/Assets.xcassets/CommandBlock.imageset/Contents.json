@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "CommandBlock.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

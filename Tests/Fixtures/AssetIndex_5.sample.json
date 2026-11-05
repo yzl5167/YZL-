@@ -1,0 +1,164 @@
+{
+ "objects": {
+  "icons/icon_128x128.png": {
+   "hash": "b62ca8ec10d07e6bf5ac8dae0c8c1d2e6a1e3356",
+   "size": 9101
+  },
+  "icons/icon_16x16.png": {
+   "hash": "5ff04807c356f1beed0b86ccf659b44b9983e3fa",
+   "size": 781
+  },
+  "icons/icon_256x256.png": {
+   "hash": "8030dd9dc315c0381d52c4782ea36c6baf6e8135",
+   "size": 19642
+  },
+  "icons/icon_32x32.png": {
+   "hash": "af96f55a90eaf11b327f1b5f8834a051027dc506",
+   "size": 2063
+  },
+  "icons/icon_48x48.png": {
+   "hash": "b80b6e9ff01c78c624df5429e1d3dcd3d5130834",
+   "size": 3409
+  },
+  "icons/minecraft.icns": {
+   "hash": "f00657542252858a721e715a2e888a9226404e35",
+   "size": 374665
+  },
+  "icons/snapshot/icon_128x128.png": {
+   "hash": "958d57021d8009de55d6e9e19957a72545e3c30c",
+   "size": 9083
+  },
+  "icons/snapshot/icon_16x16.png": {
+   "hash": "949afe72d4d3d785dab52d8baaefeb0e38b3c067",
+   "size": 783
+  },
+  "icons/snapshot/icon_256x256.png": {
+   "hash": "9f84f917a09facacf1235eed3fa77789e4554afb",
+   "size": 19683
+  },
+  "icons/snapshot/icon_32x32.png": {
+   "hash": "26ad18d9f4ef0a71255459b5f01b738b81dbc7dc",
+   "size": 1970
+  },
+  "icons/snapshot/icon_48x48.png": {
+   "hash": "df274fe57c49ef1af6d218703d805db76a5c8af9",
+   "size": 3225
+  },
+  "icons/snapshot/minecraft.icns": {
+   "hash": "65ebca3306ccd6d7f9d5de8f1cc7a1216d80246d",
+   "size": 318515
+  },
+  "minecraft/font/include/unifont.json": {
+   "hash": "f8d4768707b20359f2f7660346bd3a84b6ee27b1",
+   "size": 1879
+  },
+  "minecraft/font/unifont.zip": {
+   "hash": "a661b5622172ea1ce1fa9ec78fad484d118e5689",
+   "size": 1546906
+  },
+  "minecraft/lang/af_za.json": {
+   "hash": "b9f15e2d6073ed2f28bea176dad96df73bc6200f",
+   "size": 585825
+  },
+  "minecraft/lang/ar_sa.json": {
+   "hash": "2fc15c3e4672b46957eec9e6cf5277d992622627",
+   "size": 698734
+  },
+  "minecraft/lang/ast_es.json": {
+   "hash": "cbcc06b5fab30f91d48e727cb353ca8efb1efb65",
+   "size": 604874
+  },
+  "minecraft/lang/az_az.json": {
+   "hash": "f29681c0d43b29e82c7d26cc8634acfbe91dea35",
+   "size": 610812
+  },
+  "minecraft/lang/ba_ru.json": {
+   "hash": "bf17746fe7bb6e62dc5ef16714c92b5ba54bc79c",
+   "size": 748662
+  },
+  "minecraft/lang/bar.json": {
+   "hash": "1cf221b7ff9c8e99352e78b11d3c8b36bc907f8f",
+   "size": 599556
+  },
+  "minecraft/lang/be_by.json": {
+   "hash": "63eb6b6c6ad9083672a063bb173aafb550fcde19",
+   "size": 778269
+  },
+  "minecraft/lang/be_latn.json": {
+   "hash": "4c0c14f594a170ebe93ad9300eae5564f8607fcd",
+   "size": 623893
+  },
+  "minecraft/lang/bg_bg.json": {
+   "hash": "ab55920af1f5c0d29dd2e4f7c112f78d84d384dc",
+   "size": 772958
+  },
+  "minecraft/lang/br_fr.json": {
+   "hash": "684aa4580acd5874b1237bb2166dd1e8f2fbdad4",
+   "size": 606943
+  },
+  "minecraft/lang/brb.json": {
+   "hash": "259c00535f88da8848ce308bc1a66dadfc991aab",
+   "size": 599876
+  },
+  "minecraft/lang/bs_ba.json": {
+   "hash": "5cbc28a3bf0c653a7405c54d93377f87cf419a31",
+   "size": 590338
+  },
+  "minecraft/lang/ca_es.json": {
+   "hash": "6d2486739f198a9b1f1d773dc78a1e773613d9d4",
+   "size": 607680
+  },
+  "minecraft/lang/cs_cz.json": {
+   "hash": "cdd6721cfa7d0f78057543a715d7001b8f1173ef",
+   "size": 615923
+  },
+  "minecraft/lang/cv_cu.json": {
+   "hash": "55ff75271d4183089edabdffa97aff5739627b1b",
+   "size": 737117
+  },
+  "minecraft/lang/cy_gb.json": {
+   "hash": "43ae14c084fb32fc002e0e0a329a596c330c2367",
+   "size": 587785
+  },
+  "minecraft/lang/da_dk.json": {
+   "hash": "004b3033be46deb8180251d480d8af6a299ec222",
+   "size": 586707
+  },
+  "minecraft/lang/de_at.json": {
+   "hash": "08593496f83b8d46b931b689dc660a57511a2f8b",
+   "size": 596947
+  },
+  "minecraft/lang/de_ch.json": {
+   "hash": "c636322a503395e17d1162ad4b5d6c4c7a443eef",
+   "size": 602327
+  },
+  "minecraft/lang/de_de.json": {
+   "hash": "86244795322131be70a64cd8ab2963a6ffb54d17",
+   "size": 614707
+  },
+  "minecraft/lang/el_gr.json": {
+   "hash": "31a541f1894bfd946dd87d1a96ec6c20f26338f9",
+   "size": 831106
+  },
+  "minecraft/lang/en_au.json": {
+   "hash": "bc7d1f078d542e5cf26a06d2152f163d9ea87405",
+   "size": 572820
+  },
+  "minecraft/lang/en_ca.json": {
+   "hash": "4d7febd5ebe53bd1227fc2def189f5b3cac868a8",
+   "size": 572844
+  },
+  "minecraft/lang/en_gb.json": {
+   "hash": "486213c7f54a0637beabeb4eaaf7d139caba38e8",
+   "size": 572946
+  },
+  "minecraft/lang/en_nz.json": {
+   "hash": "f85e273e92999ed7dcd402f55f90ae32e5b5036c",
+   "size": 572908
+  },
+  "minecraft/lang/en_pt.json": {
+   "hash": "38b55e681b3fd13ff2f637f803a75793a9a581fc",
+   "size": 592083
+  }
+ }
+}

@@ -1,0 +1,79 @@
+name: YZLLauncher
+
+options:
+  bundleIdPrefix: com.yzl
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+
+targets:
+  YZLLauncher:
+    type: application
+    platform: iOS
+    sources:
+      - path: YZLLauncher
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yzl.launcher
+        PRODUCT_NAME: YZLLauncher
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: YZLLauncher/Info.plist
+      properties:
+        CFBundleDisplayName: YZL Launcher
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UIUserInterfaceStyle: Light
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIRequiresFullScreen: true
+        LSApplicationQueriesSchemes:
+          - apple-magnifier
+
+  YZLLauncherTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: YZLLauncher
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yzl.launcher.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/YZLLauncher.app/YZLLauncher"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  YZLLauncher:
+    build:
+      targets:
+        YZLLauncher: all
+        YZLLauncherTests: [test]
+    test:
+      targets:
+        - YZLLauncherTests
+      config: Debug
+    run:
+      config: Debug
+    archive:
+      config: Release

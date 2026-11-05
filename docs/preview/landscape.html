@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>YZL Launcher iOS · 横屏设计预览</title>
+<style>
+  :root{
+    --page:#F4F6FB; --card:#FFFFFF; --field:#F8FAFD;
+    --text:#252F44; --muted:#7C8AA0; --light:#A2AEC0; --border:#E4E9F2;
+    --accent:#3B82F6; --accent-text:#1D4C9E; --accent-soft:#EAF2FF;
+    --success:#22C55E; --success-soft:#E9F9EF; --danger:#EF4444;
+    --warning-soft:#FFF4E5; --warning-text:#B26A00;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0b0d12}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","Microsoft YaHei",sans-serif;
+       -webkit-font-smoothing:antialiased;color:var(--text)}
+  #stage{width:960px;height:432px;transform:scale(2.5);transform-origin:top left;position:relative;overflow:hidden}
+  .screen{width:960px;height:432px;display:flex;background:var(--page);overflow:hidden;position:relative}
+  .rail{width:84px;flex:none;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px}
+  .brand{width:42px;height:42px;border-radius:11px;display:block}
+  .brandname{font-size:10px;color:var(--muted);margin-top:5px}
+  .navs{display:flex;flex-direction:column;gap:4px;margin-top:16px;width:100%;align-items:center}
+  .navitem{width:64px;padding:5px 0;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted)}
+  .navitem.active{background:var(--accent-soft);color:var(--accent)}
+  .navitem span{font-size:10px;font-weight:500}
+  .railspacer{flex:1}
+  .railavatar{width:64px;padding:5px 0;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted)}
+  .railavatar.active{background:var(--accent-soft)}
+  .railavatar .cap{font-size:9.5px;max-width:60px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .content{flex:1;min-width:0;position:relative;overflow:hidden}
+
+  .pixelhead{image-rendering:pixelated;border-radius:9px;border:1px solid var(--border);background:#D5DCE8}
+  .btn{display:flex;align-items:center;justify-content:center;gap:7px;font-weight:600;border-radius:10px}
+  .btn.primary{background:var(--accent);color:#fff;height:52px;font-size:17px;width:100%;box-shadow:0 6px 14px rgba(59,130,246,.22)}
+  .btn.soft{background:#fff;border:1px solid var(--border);color:var(--accent-text);height:40px;font-size:13px;width:100%}
+  .btn.pill{background:var(--accent-soft);color:var(--accent-text);font-size:13px;padding:0 16px;height:38px;border-radius:9px}
+  .btn.danger{background:#FEECEC;color:var(--danger);border:1px solid rgba(239,68,68,.35);height:42px;font-size:13px;padding:0 16px}
+  .badge{display:inline-flex;align-items:center;font-size:10px;font-weight:600;line-height:1;padding:4px 8px;border-radius:999px;background:var(--field);color:var(--muted);white-space:nowrap}
+  .badge.success{background:var(--success-soft);color:#17934A}
+  .badge.accent{background:var(--accent-soft);color:var(--accent-text)}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 2px 10px rgba(23,43,77,.045)}
+
+  /* home */
+  .home{height:100%;background:#fff;display:flex;justify-content:center;overflow:hidden}
+  .homecol{width:420px;display:flex;flex-direction:column;align-items:center;padding-top:12px}
+  .home .name{font-size:22px;font-weight:700;margin-top:10px}
+  .home .sub{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .vrow{width:100%;height:44px;margin-top:13px;border:1px solid var(--border);border-radius:12px;display:flex;align-items:center;gap:9px;padding:0 14px;background:#fff}
+  .vrow img{width:30px;height:30px;image-rendering:pixelated}
+  .vrow .lb{font-size:12px;color:var(--muted)}
+  .vrow .vv{font-size:14px;font-weight:600}
+  .vrow .chev{margin-left:auto;color:var(--light)}
+  .home .launch{margin-top:11px;width:100%}
+  .home .two{margin-top:10px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pills{display:flex;gap:7px;margin-top:12px}
+  .pills div{font-size:9.5px;color:var(--muted);background:var(--field);border-radius:999px;padding:5px 9px}
+  .pills b{font-weight:500;color:var(--light)}
+
+  /* page header */
+  .pagehead{height:68px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px 0 24px}
+  .pagehead .tt{font-size:24px;font-weight:700;line-height:1.1}
+  .pagehead .st{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .pagehead .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .backbtn{width:36px;height:36px;border-radius:50%;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text)}
+  .pagebody{flex:1;min-height:0;overflow:hidden}
+
+  /* account */
+  .accountwrap{max-width:880px;margin:0 auto;padding:0 24px}
+  .acctcard{padding:16px}
+  .accttop{display:flex;align-items:center;gap:14px}
+  .acctname{font-size:19px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .acctmeta{display:flex;align-items:center;gap:8px;margin-top:5px}
+  .kind{font-size:10.5px;font-weight:500;color:var(--accent-text);background:var(--accent-soft);border-radius:999px;padding:3px 8px}
+  .uuid{font-size:10.5px;color:var(--light);font-family:ui-monospace,Consolas,monospace}
+  .acctuse{display:flex;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+  .using{flex:1;height:42px;border-radius:8px;background:var(--success-soft);color:var(--success);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+  .privacy{margin-top:14px;padding:14px 16px;font-size:11px;color:var(--muted);line-height:1.6}
+  .empty{padding:22px;display:flex;align-items:center;gap:18px}
+  .empty .circle{width:68px;height:68px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;color:rgba(59,130,246,.6)}
+  .empty .t{font-size:19px;font-weight:700}
+  .empty .d{font-size:11px;color:var(--muted);margin-top:5px}
+  .empty .btn{margin-left:auto;width:150px;height:42px;background:var(--accent);color:#fff;font-size:13px;border-radius:9px}
+
+  /* versions */
+  .vsplit{display:flex;height:100%;min-height:0}
+  .vleft{width:350px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+  .filter{height:38px;flex:none;display:flex;align-items:center;padding:0 16px;font-size:11px;color:var(--muted)}
+  .seg{margin-left:auto;width:124px;height:26px;background:#EDF1F7;border-radius:8px;padding:2px;display:flex}
+  .seg div{flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);border-radius:6px}
+  .seg .on{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(23,43,77,.12)}
+  .vlist{flex:1;min-height:0;padding:0 12px}
+  .group{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .vrow2{height:47px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #EEF1F6}
+  .vrow2:last-child{border-bottom:none}
+  .vrow2.sel{background:var(--accent-soft)}
+  .vrow2 img{width:29px;height:29px;image-rendering:pixelated}
+  .vrow2 .name{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .vrow2.sel .name{color:var(--accent-text)}
+  .vrow2 .sub{font-size:10px;color:var(--muted);margin-top:3px}
+  .vrow2 .chev{margin-left:auto;color:var(--light)}
+  .vdetail{flex:1;min-width:0;padding:0 20px;overflow:hidden}
+  .vdhead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .vdhead img{width:42px;height:42px;image-rendering:pixelated}
+  .vdhead .name{font-size:20px;font-weight:700}
+  .vdhead .sub{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .vdgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .cardpad{padding:13px 14px}
+  .ctitle{font-size:13px;font-weight:600;margin-bottom:7px}
+  .ptext{font-size:10.5px;color:var(--muted);line-height:1.6}
+  .irow{display:flex;justify-content:space-between;font-size:11px;padding:4px 0}
+  .irow .k{color:var(--muted)}
+  .progress{height:6px;background:#E8EEF7;border-radius:3px;overflow:hidden;margin:6px 0}
+  .progress i{display:block;height:100%;width:43%;background:var(--accent);border-radius:3px}
+
+  /* settings */
+  .settingsbody{max-width:880px;margin:0 auto;padding:0 24px 18px;overflow:hidden}
+  .scard{margin-bottom:12px;padding:14px 16px}
+  .scard h3{font-size:15px;font-weight:600;margin-bottom:10px}
+  .field{height:40px;border-radius:9px;background:var(--field);border:1px solid var(--border);display:flex;align-items:center;padding:0 12px;font-size:11px;font-family:ui-monospace,Consolas,monospace;color:var(--text)}
+  .hint{font-size:9.5px;color:var(--muted);line-height:1.55;margin-top:8px}
+  .row{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0}
+  .row .v{color:var(--muted)}
+  .slider{height:18px;display:flex;align-items:center;margin:4px 0 2px}
+  .track{position:relative;width:100%;height:4px;border-radius:2px;background:#E4E9F2}
+  .track i{position:absolute;left:0;top:0;height:4px;width:42%;background:var(--accent);border-radius:2px}
+  .track b{position:absolute;left:42%;top:50%;width:17px;height:17px;margin:-8.5px 0 0 -8.5px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(23,43,77,.25)}
+
+  /* about */
+  .aboutbody{max-width:880px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .aboutcard{padding:14px 16px}
+  .aboutcard h3{font-size:13px;font-weight:600;margin-bottom:7px}
+  .milestone{display:flex;gap:7px;font-size:10.5px;color:var(--muted);margin-top:6px}
+  .milestone.done{color:var(--text)}
+  .abouttext{font-size:10.5px;color:var(--muted);line-height:1.65}
+
+  /* launch sheet */
+  .sheetback{position:absolute;inset:0;background:rgba(18,28,46,.38);display:flex;align-items:center;justify-content:center;z-index:20}
+  .sheet{width:640px;max-height:424px;background:var(--page);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(15,23,42,.32);border:1px solid rgba(255,255,255,.7)}
+  .sheethead{height:48px;flex:none;display:flex;align-items:center;padding:0 20px;gap:10px}
+  .sheethead .tt{font-size:19px;font-weight:700}
+  .sheethead .st{font-size:10px;color:var(--muted);margin-top:2px}
+  .sheetbody{flex:1;min-height:0;overflow:hidden;padding:0 20px;display:grid;grid-template-columns:1fr 1.15fr;gap:12px}
+  .sheetfoot{height:46px;flex:none;display:flex;gap:9px;align-items:center;padding:0 20px;border-top:1px solid var(--border);background:rgba(255,255,255,.55)}
+  .checks{padding:8px 12px}
+  .checkrow{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #EEF1F6;align-items:flex-start}
+  .checkrow:last-child{border-bottom:none}
+  .checkrow .ic{font-size:10px;font-weight:700;width:14px;text-align:center;line-height:14px;flex:none;margin-top:1px}
+  .checkrow .n{font-size:10.5px;font-weight:600}
+  .checkrow .d{font-size:9.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+  .checkrow.ok .ic{color:var(--success)}
+  .checkrow.warn .ic{color:var(--warning-text)}
+  .checkrow.fail .ic{color:var(--danger)}
+  .sheetbanner{padding:9px 11px;border-radius:9px;font-size:10px;line-height:1.5;margin-top:10px;background:#FEECEC;color:#B91C1C}
+  .sheetbanner b{display:block;font-size:11px;margin-bottom:2px}
+
+  /* login */
+  .login{height:100%;display:flex;flex-direction:column}  .loginhead{height:60px;flex:none;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--border)}
+  .loginhead .tt{font-size:20px;font-weight:700}
+  .loginhead .st{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .closex{width:30px;height:30px;border-radius:50%;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);margin-left:auto}
+  .loginbody{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:26px;padding:22px 28px;min-height:0}
+  .loginbody h3{font-size:17px;font-weight:600}
+  .loginbody .desc{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:9px}
+  .url{font-size:10.5px;color:var(--accent-text);margin-top:10px;font-family:ui-monospace,Consolas,monospace}
+  .codebox{background:var(--field);border:1px solid var(--border);border-radius:14px;padding:14px 16px;text-align:center}
+  .codebox .lb{font-size:10.5px;color:var(--muted)}
+  .codebox .code{font-size:34px;font-weight:700;letter-spacing:1.5px;margin-top:4px;font-family:ui-monospace,Consolas,monospace}
+  .waitrow{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--muted);margin-top:12px}
+  .spinner{width:12px;height:12px;border-radius:50%;border:2px solid #D8E2F1;border-top-color:var(--accent);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const BASE = '../../YZLLauncher/Resources/Assets.xcassets/';
+const IMG = {
+  brand: BASE + 'BrandIcon.imageset/BrandIcon.png',
+  grass: BASE + 'GrassBlock.imageset/GrassBlock.png',
+  command: BASE + 'CommandBlock.imageset/CommandBlock.png'
+};
+
+function svg(paths, size, opts={}){
+  const width = opts.width || 1.8;
+  return `<span style="display:inline-flex;width:${size}px;height:${size}px;flex:none">
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${opts.fill?'currentColor':'none'}"
+      stroke="${opts.fill?'none':'currentColor'}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
+}
+const I = {
+  gear: s => svg('<circle cx="12" cy="12" r="3.1"/><path d="M19.2 12.9a7.6 7.6 0 0 0 .05-1.6l2-1.5-2-3.5-2.3.95a7.4 7.4 0 0 0-1.4-.82L15.2 3.9h-4l-.36 2.53a7.4 7.4 0 0 0-1.4.82L7.1 6.3l-2 3.5 2 1.5a7.6 7.6 0 0 0 0 1.6l-2 1.5 2 3.5 2.34-.95c.43.33.9.6 1.4.82l.36 2.53h4l.36-2.53c.5-.22.97-.49 1.4-.82l2.34.95 2-3.5-2.1-1.6Z"/>', s),
+  person: s => svg('<circle cx="12" cy="7.4" r="3.4"/><path d="M5.4 20c.5-3.5 3.2-5.7 6.6-5.7s6.1 2.2 6.6 5.7"/>', s),
+  chevron: s => svg('<path d="m9 5 7 7-7 7"/>', s, {width:2}),
+  back: s => svg('<path d="m15 5-7 7 7 7"/>', s, {width:2}),
+  play: s => svg('<path d="M7 4.6v14.8L19.2 12 7 4.6Z"/>', s, {fill:true}),
+  house: s => svg('<path d="M4 10.4 12 3.6l8 6.8V20a1 1 0 0 1-1 1h-5v-5.6H10V21H5a1 1 0 0 1-1-1v-9.6Z"/>', s, {fill:true}),
+  stack: s => svg('<path d="m12 3 8 4.3-8 4.3-8-4.3L12 3Z"/><path d="m4.8 12.2 7.2 3.9 7.2-3.9"/><path d="m4.8 16.6 7.2 3.9 7.2-3.9"/>', s),
+  info: s => svg('<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4"/><circle cx="12" cy="8.1" r=".5" fill="currentColor" stroke="none"/>', s),
+  check: s => svg('<path d="m6.5 12.2 3.4 3.4 7.2-7.4"/>', s, {width:2.2}),
+  close: s => svg('<path d="m6 6 12 12M18 6 6 18"/>', s, {width:2}),
+  download: s => svg('<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 19h14"/>', s, {width:2})
+};
+
+/* 本地素材：8×8 头部像素 + 64×64 完整皮肤贴图，和 App 里的做法一致，不请求任何第三方头像服务。 */
+const HEAD_IMG = 'avatar/steve.png';
+const SKIN_IMG = 'avatar/steve_skin64.png';
+function pixelHead(size){
+  return `<img src="${HEAD_IMG}" style="width:${size}px;height:${size}px;image-rendering:pixelated;border-radius:9px;border:1px solid var(--border);background:#D5DCE8">`;
+}
+
+function rail(active, signedIn){
+  const items = [['home','首页',I.house],['versions','版本',I.stack],['skin','皮肤',I.person],['settings','设置',I.gear]];
+  return `<div class="rail">
+    <img class="brand" src="${IMG.brand}">
+    <div class="brandname">YZL</div>
+    <div class="navs">
+      ${items.map(([id,label,ic])=>`<div class="navitem ${active===id?'active':''}">${ic(20)}<span>${label}</span></div>`).join('')}
+    </div>
+    <div class="railspacer"></div>
+    <div class="railavatar ${active==='account'?'active':''}">
+      ${signedIn ? pixelHead(38) : `<div style="width:38px;height:38px;border-radius:9px;background:var(--accent-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:rgba(59,130,246,.8)">${I.person(17)}</div>`}
+      <div class="cap" style="${active==='account'?'color:var(--accent-text)':''}">${signedIn?'Steve':'未登录'}</div>
+    </div>
+    <div class="navitem ${active==='about'?'active':''}" style="margin-top:2px">
+      ${I.info(20)}<span>关于</span>
+    </div>
+  </div>`;
+}
+
+function tophead(title, subtitle, right=''){
+  return `<div class="pagehead">
+    <div><div class="tt">${title}</div><div class="st">${subtitle}</div></div>
+    <div class="right">${right}</div>
+  </div>`;
+}
+
+function homeScreen(signedIn, installing=false){
+  const version = signedIn ? '1.21.10' : '未选择';
+  const launchLabel = installing ? `${I.download(16)}下载游戏` : (signedIn ? `${I.play(16)}启动游戏` : `${I.download(16)}下载游戏`);
+  const secondLabel = installing ? `${I.download(14)}下载游戏` : (signedIn ? `${I.check(14)}启动自检` : `${I.download(14)}下载游戏`);
+  const versionBadge = installing
+    ? '<span class="badge accent">安装中</span>'
+    : (signedIn ? '<span class="badge success">已安装</span>' : '');
+  const versionPill = installing ? '安装中' : (signedIn ? '已安装' : '未安装');
+  const banner = installing ? `<div class="card cardpad" style="margin-top:12px;width:100%">
+      <div style="display:flex;align-items:center;gap:8px"><div class="ctitle" style="margin:0">正在安装 1.21.10</div><div class="ptext" style="margin-left:auto">1,204/3,620</div></div>
+      <div class="progress"><i style="width:36%"></i></div>
+      <div style="display:flex;align-items:center;gap:6px"><div class="ptext">261 MB / 732 MB · 8.4 MB/s</div><div class="ptext" style="margin-left:auto;color:var(--danger);font-weight:600">取消</div></div>
+    </div>` : '';
+  return `<div class="content"><div class="home"><div class="homecol">
+    <div style="position:relative">${signedIn ? pixelHead(120) : `<div style="width:120px;height:120px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:rgba(59,130,246,.55)">${I.person(48)}</div>`}</div>
+    <div class="name">${signedIn?'Steve':'未登录'}</div>
+    <div class="sub">${signedIn?'微软正版账号':'微软账户 · 点击头像登录'}</div>
+    <div class="vrow">
+      <img src="${IMG.grass}">
+      <span class="lb">当前版本</span><span class="vv">${version}</span>
+      ${versionBadge}
+      <span class="chev">${I.chevron(11)}</span>
+    </div>
+    <div class="launch"><div class="btn primary">${launchLabel}</div></div>
+    <div class="two"><div class="btn soft">${I.stack(13)}版本管理</div><div class="btn soft">${secondLabel}</div></div>
+    ${banner}
+    <div class="pills"><div><b>版本</b> ${versionPill}</div><div><b>JIT</b> 未知</div><div><b>Java</b> 未安装</div><div><b>引擎</b> 未接入</div></div>
+  </div></div></div>`;
+}
+
+function accountScreen(signedIn){
+  const header = tophead('账号管理','微软正版账号 · 设备码登录',
+    signedIn ? '<div class="btn danger">退出登录</div>' : '<div class="btn pill">登录账号</div>');
+  const body = signedIn ? `
+    <div class="accountwrap">
+      <div class="card acctcard">
+        <div class="accttop">
+          ${pixelHead(58)}
+          <div>
+            <div class="acctname">Steve <span class="badge success">当前</span></div>
+            <div class="acctmeta"><span class="kind">微软正版账号</span><span class="uuid">069a79f4-44e9…</span></div>
+          </div>
+        </div>
+        <div class="acctuse">
+          <div class="using">${I.check(12)}正在使用</div>
+          <div class="btn danger">退出</div>
+        </div>
+      </div>
+      <div class="card privacy">微软密码不会交给启动器：设备码登录在微软网页完成，只保存 Minecraft 令牌和刷新令牌，均存放在本机 Keychain。</div>
+    </div>` : `
+    <div class="accountwrap">
+      <div class="card empty">
+        <div class="circle">${I.person(28)}</div>
+        <div><div class="t">还没有登录账号</div><div class="d">登录微软账户后，启动器会读取 Minecraft: Java Edition 档案。</div></div>
+        <div class="btn">登录微软账户</div>
+      </div>
+      <div class="card privacy">微软密码不会交给启动器：设备码登录在微软网页完成，只保存 Minecraft 令牌和刷新令牌，均存放在本机 Keychain。</div>
+    </div>`;
+  return `<div class="content">${header}${body}</div>`;
+}
+
+function loginScreen(){
+  return `<div class="content"><div class="login">
+    <div class="loginhead">
+      <div><div class="tt">登录微软账户</div><div class="st">设备代码授权 · 不经过第三方服务器</div></div>
+      <div class="closex">${I.close(12)}</div>
+    </div>
+    <div class="loginbody">
+      <div>
+        <h3>在浏览器中完成授权</h3>
+        <div class="desc">用手机或电脑打开下面的链接，输入右侧代码，并登录你自己的微软账户。</div>
+        <div class="btn primary" style="height:44px;font-size:13.5px;margin-top:14px">打开浏览器授权</div>
+        <div class="url">https://microsoft.com/link</div>
+      </div>
+      <div>
+        <div class="codebox"><div class="lb">登录代码</div><div class="code">K7Q2-9WXN</div></div>
+        <div class="btn soft" style="height:38px;margin-top:10px">复制代码</div>
+        <div class="waitrow"><div class="spinner"></div>等待你在浏览器中完成授权…</div>
+      </div>
+    </div>
+  </div></div>`;
+}
+
+const VERSIONS = [
+  ['1.21.10','正式版 · 2026-09-30','grass',true],
+  ['1.21.9','正式版 · 2026-08-12','grass',false],
+  ['1.21.8','正式版 · 2026-06-17','grass',false],
+  ['1.21.4','正式版 · 2024-12-03','grass',false],
+  ['1.20.6','正式版 · 2024-04-29','grass',false],
+  ['1.20.1','正式版 · 2023-06-12','grass',false]
+];
+
+function versionsScreen(){
+  const list = VERSIONS.map(([id,sub,img,cur],i)=>`
+    <div class="vrow2 ${i===0?'sel':''}">
+      <img src="${IMG[img]}">
+      <div><div class="name">${id}${cur?'<span class="badge success">当前</span>':(i===1?'<span class="badge accent">已安装</span>':'')}</div><div class="sub">${sub}</div></div>
+      <div class="chev">${I.chevron(10)}</div>
+    </div>`).join('');
+  return `<div class="content">
+    ${tophead('版本管理','Mojang 版本清单 · 已安装的版本会走启动自检','<div class="btn pill">刷新</div>')}
+    <div class="vsplit">
+      <div class="vleft">
+        <div class="filter">共 6 个版本<div class="seg"><div class="on">正式版</div><div>全部</div></div></div>
+        <div class="vlist"><div class="group">${list}</div></div>
+      </div>
+      <div class="vdetail">
+        <div class="vdhead"><img src="${IMG.grass}"><div><div class="name">1.21.10</div><div class="sub">正式版 · 2026-09-30</div></div><div class="btn pill" style="margin-left:auto;height:32px">${I.play(11)}启动</div><span class="badge success" style="padding:6px 10px">当前版本</span></div>
+        <div class="vdgrid">
+          <div>
+            <div class="card cardpad"><div class="ctitle">安装原版文件</div><div class="ptext">客户端 jar + iOS 适用依赖库 + 资源索引 + 资源对象。全部文件通过 SHA-1 后才会记为“已安装”。</div><div style="font-size:10px;color:var(--success);font-weight:600;margin-top:9px">✓ 已安装并通过 SHA-1 校验</div><div class="ptext" style="margin-top:4px">3,620 个文件 · 732 MB · 2026-11-05 14:22</div><div class="btn primary" style="height:36px;font-size:13px;margin-top:9px">${I.play(12)}启动游戏</div></div>
+            <div class="card cardpad" style="margin-top:12px"><div class="ctitle">版本信息</div>
+              <div class="irow"><span class="k">发布时间</span><span>2026-09-30</span></div>
+              <div class="irow"><span class="k">Java 要求</span><span>Java 21</span></div>
+              <div class="irow"><span class="k">类型</span><span>正式版</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="card cardpad"><div class="ctitle">客户端 jar（单独下载）</div><div class="ptext">只下载 jar，不会写入安装记录；完整安装请用左侧的「开始安装」入口。</div><div style="margin-top:10px" class="btn pill">仅下载 jar</div></div>
+            <div class="card cardpad" style="margin-top:12px"><div class="ctitle">启动自检</div><div class="ptext">主页和版本页的「启动」会检查账户、安装记录、版本 JSON、jar、依赖库、资源索引、令牌、JRE、JIT、内核与内存，再决定是否把参数交给引擎。</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function installScreen(){
+  const list = VERSIONS.map(([id,sub,img],i)=>`
+    <div class="vrow2 ${i===1?'sel':''}">
+      <img src="${IMG[img]}">
+      <div><div class="name">${id}${i===0?'<span class="badge success">当前</span>':(i===1?'<span class="badge accent">安装中</span>':'')}</div><div class="sub">${sub}</div></div>
+      <div class="chev">${I.chevron(10)}</div>
+    </div>`).join('');
+  return `<div class="content">
+    ${tophead('版本管理','Mojang 版本清单 · 已安装的版本会走启动自检','<div class="btn pill">刷新</div>')}
+    <div class="vsplit">
+      <div class="vleft">
+        <div class="filter">共 6 个版本<div class="seg"><div class="on">正式版</div><div>全部</div></div></div>
+        <div class="vlist"><div class="group">${list}</div></div>
+      </div>
+      <div class="vdetail">
+        <div class="vdhead"><img src="${IMG.grass}"><div><div class="name">1.21.9</div><div class="sub">正式版 · 2026-08-12</div></div><span class="badge accent" style="margin-left:auto;padding:6px 10px">安装中</span></div>
+        <div class="vdgrid">
+          <div>
+            <div class="card cardpad">
+              <div class="ctitle">安装原版文件</div>
+              <div class="ptext">客户端 jar + iOS 适用依赖库 + 资源索引 + 资源对象。全部文件通过 SHA-1 后才会记为“已安装”。</div>
+              <div style="font-size:10px;color:var(--accent-text);font-weight:600;margin-top:9px">1,204 / 3,620 个文件 · 261 MB / 732 MB</div>
+              <div class="progress"><i style="width:36%"></i></div>
+              <div class="ptext">8.4 MB/s · 并发 8 · 剩余约 1 分 12 秒</div>
+              <div class="btn danger" style="height:34px;margin-top:8px">取消安装</div>
+            </div>
+            <div class="card cardpad" style="margin-top:12px"><div class="ctitle">版本信息</div>
+              <div class="irow"><span class="k">发布时间</span><span>2026-08-12</span></div>
+              <div class="irow"><span class="k">Java 要求</span><span>Java 21</span></div>
+              <div class="irow"><span class="k">类型</span><span>正式版</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="card cardpad"><div class="ctitle">断点续传</div><div class="ptext">已下载的分片会保留；取消或失败后再次点“继续安装”只补差额，不会从头重下。</div></div>
+            <div class="card cardpad" style="margin-top:12px"><div class="ctitle">下载策略</div><div class="ptext">文件级并发 8；大于 4 MiB 的文件内部再开 8 路分片，HEAD 探测支持 Range 才启用，完成后逐文件 SHA-1 校验。</div></div>
+            <div class="card cardpad" style="margin-top:12px"><div class="ctitle">启动前</div><div class="ptext">安装通过后会写入 installed.json，主页与版本页的“启动”才会进入启动自检。</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function settingsScreen(){
+  return `<div class="content">
+    ${tophead('设置','下载、外观、账号与本地数据')}
+    <div class="settingsbody">
+      <div class="card scard"><h3>账户</h3><div class="field">00000000402b5328</div><div class="hint">默认已内置与安卓版相同的公共客户端 ID；也可以换成自己的 Azure 公共客户端。该 ID 是公开标识，不是密钥。</div></div>
+      <div class="card scard"><h3>启动 <span style="float:right;color:var(--accent-text);font-size:12px">2048 MB</span></h3><div class="slider"><div class="track"><i></i><b></b></div></div><div class="hint">游戏内存。启动自检会读取这个值并生成 -Xmx 参数；iPhone 建议先取 1024–2048 MB。</div></div>
+      <div class="card scard"><h3>诊断</h3>
+        <div class="row"><span>设备</span><span class="v">iPhone</span></div>
+        <div class="row"><span>系统</span><span class="v">iOS 16.0+</span></div>
+        <div class="row"><span>JIT</span><span class="v">未知</span></div>
+        <div class="row"><span>Java</span><span class="v">未安装</span></div>
+        <div class="row"><span>引擎</span><span class="v">未接入</span></div>
+        <div class="row"><span>已安装版本</span><span class="v">1 个</span></div>
+        <div class="row"><span>当前版本</span><span class="v">1.21.10 · 已安装</span></div>
+      </div>
+      <div class="card scard" style="display:flex;align-items:center"><div><h3 style="margin:0">关于</h3><div class="hint" style="margin-top:3px">版本说明、里程碑与开源许可</div></div><div class="btn pill" style="margin-left:auto">查看</div></div>
+    </div>
+  </div>`;
+}
+
+function aboutScreen(){
+  return `<div class="content">
+    <div class="pagehead"><div class="backbtn">${I.back(18)}</div><div><div class="tt">关于</div><div class="st">YZL Launcher iOS</div></div></div>
+    <div class="aboutbody">
+      <div>
+        <div class="card aboutcard"><div style="display:flex;gap:12px;align-items:center"><img src="${IMG.brand}" style="width:54px;height:54px;border-radius:12px"><div><div style="font-size:18px;font-weight:700">YZL Launcher iOS</div><div class="hint" style="margin-top:3px">版本 0.1.0 · M1 开发预览</div></div></div></div>
+        <div class="card aboutcard" style="margin-top:14px"><h3>里程碑</h3>
+          <div class="milestone done">${I.check(11)} M0 · 工程骨架、界面、版本清单</div>
+          <div class="milestone">○ M1 · 微软登录、版本安装、下载器、启动自检</div>
+          <div class="milestone">○ M2 · JRE + 启动内核，进入主菜单</div>
+          <div class="milestone">○ M3 · 模组 / 整合包与联机</div>
+        </div>
+      </div>
+      <div>
+        <div class="card aboutcard"><h3>运行条件</h3><div class="abouttext">iOS 不允许 App Store 应用使用 JIT。TrollStore 兼容设备可以免电脑安装并自动开启 JIT；iOS 17.0.1 及以上需要电脑辅助配对/附加。</div></div>
+        <div class="card aboutcard" style="margin-top:14px"><h3>开源与许可</h3><div class="abouttext">M0 外壳为项目自有代码。若 M2 复用 Amethyst / Pojav 系与 Boardwalk（GPLv3），相关部分及衍生作品将按 GPLv3 开源。</div></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function launchOverlay(){
+  const checks = [
+    ['ok','✓','微软账户','Steve · 069a79f4-44e9-4726-a5be-fca90e38aaf5'],
+    ['ok','✓','版本安装','3,620 个文件 · 732 MB · 44 个 classpath 项齐全'],
+    ['ok','✓','登录令牌','有效，Minecraft 令牌到期 12:40'],
+    ['fail','!','Java 运行时','没有找到 iOS JRE，M2 会随引擎放入 java_runtimes。'],
+    ['fail','!','启动内核','Amethyst 内核尚未接入（M2），安装和参数已准备好。'],
+    ['warn','!','JIT','当前外壳无法检测，接入内核后由引擎实际探测。'],
+    ['ok','✓','内存','2048 MB（本机建议 1536 MB）']
+  ];
+  return `<div class="sheetback"><div class="sheet">
+    <div class="sheethead">
+      <div><div class="tt">启动游戏</div><div class="st">1.21.10 · 启动前自检</div></div>
+      <div style="margin-left:auto;color:var(--muted)">${I.close(12)}</div>
+    </div>
+    <div class="sheetbody">
+      <div>
+        <div class="card cardpad" style="display:flex;align-items:center;gap:11px">
+          ${pixelHead(44)}
+          <div><div style="font-size:15px;font-weight:700">Steve</div><div class="ptext" style="margin-top:2px">1.21.10 · Java 21 · 44 个 classpath 项 · 2048 MB 堆</div></div>
+        </div>
+        <div class="sheetbanner"><b>启动条件未满足</b>Amethyst 内核尚未接入（M2）。安装和启动参数已经准备好，接入后即可拉起 JVM。</div>
+        <div class="card cardpad" style="margin-top:10px"><div class="ctitle">启动需要什么</div><div class="ptext">微软正版账户 · 已安装的版本文件 · iOS JRE · Amethyst 启动内核 · 已开启的 JIT。前两项由本仓库完成，后三项属于 M2 引擎侧。</div></div>
+      </div>
+      <div class="card checks">
+        <div style="font-size:12px;font-weight:600;margin-bottom:3px">检查项</div>
+        ${checks.map(([tone,ic,name,desc])=>`<div class="checkrow ${tone}"><div class="ic">${ic}</div><div><div class="n">${name}</div><div class="d">${desc}</div></div></div>`).join('')}
+      </div>
+    </div>
+    <div class="sheetfoot">
+      <div class="btn pill" style="width:120px;height:34px">重新检查</div>
+      <div class="btn soft" style="width:88px;height:34px">关闭</div>
+      <div class="ptext" style="margin-left:auto;font-size:9px">自检不会写入任何令牌</div>
+    </div>
+  </div></div>`;
+}
+
+function skinScreen(){
+  return `<div class="content">
+    ${tophead('皮肤','读取当前微软账号的皮肤与纹理 URL','<div class="btn pill">账号</div>')}
+    <div class="accountwrap">
+      <div class="card acctcard" style="display:flex;align-items:center;gap:14px">
+        ${pixelHead(58)}
+        <div>
+          <div class="acctname">Steve <span class="badge success">当前</span></div>
+          <div class="acctmeta"><span class="kind">皮肤来源：Mojang 档案</span></div>
+        </div>
+      </div>
+      <div class="card accountwrap" style="margin-top:14px">
+        <div style="display:flex;gap:18px;align-items:flex-start">
+          <img src="${SKIN_IMG}" style="width:156px;height:156px;image-rendering:pixelated;border-radius:12px;border:1px solid var(--border);background:#D5DCE8">
+          <div>
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:7px">皮肤预览</h3>
+            <div class="ptext">这是从 Mojang 档案里读到的 64×64 皮肤贴图。</div>
+            <div class="ptext" style="margin-top:8px">启动内核接入后，M2 会把它用到 Amethyst 的皮肤渲染层。</div>
+          </div>
+        </div>
+      </div>
+      <div class="card privacy" style="margin-top:14px">皮肤只在 Mojang 档案里读取；启动器本身不上传或修改皮肤。</div>
+    </div>
+  </div>`;
+}
+
+const screens = {
+  home: () => `<div class="screen">${rail('home', true)}${homeScreen(true)}</div>`,
+  'home-out': () => `<div class="screen">${rail('home', false)}${homeScreen(false)}</div>`,
+  'home-install': () => `<div class="screen">${rail('home', true)}${homeScreen(true, true)}</div>`,
+  versions: () => `<div class="screen">${rail('versions', true)}${versionsScreen()}</div>`,
+  install: () => `<div class="screen">${rail('versions', true)}${installScreen()}</div>`,
+  skin: () => `<div class="screen">${rail('skin', true)}${skinScreen()}</div>`,
+  account: () => `<div class="screen">${rail('account', false)}${accountScreen(false)}</div>`,
+  'account-in': () => `<div class="screen">${rail('account', true)}${accountScreen(true)}</div>`,
+  login: () => `<div class="screen">${loginScreen()}</div>`,
+  launch: () => `<div class="screen">${rail('home', true)}${homeScreen(true)}${launchOverlay()}</div>`,
+  settings: () => `<div class="screen">${rail('settings', true)}${settingsScreen()}</div>`,
+  about: () => `<div class="screen">${rail('about', true)}${aboutScreen()}</div>`
+};
+
+const params = new URLSearchParams(location.search);
+const name = params.get('screen') || 'home';
+document.getElementById('stage').innerHTML = (screens[name] || screens.home)();
+</script>
+</body>
+</html>

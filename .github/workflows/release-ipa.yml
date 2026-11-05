@@ -1,0 +1,92 @@
+name: Release unsigned IPA
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Device IPA (unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Static preflight
+        run: python3 scripts/preflight.py
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project YZLLauncher.xcodeproj \
+            -scheme YZLLauncher \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            -parallelizeTargets \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build-device.log
+
+      - name: Package IPA
+        run: bash scripts/package-unsigned-ipa.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YZLLauncher-unsigned-ipa
+          path: YZLLauncher-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Build TrollStore package
+        run: |
+          brew install ldid
+          bash scripts/sign-ipa.sh YZLLauncher-unsigned.ipa trollstore
+          ls -lh com.yzl.launcher.tipa
+
+      - name: Upload TIPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YZLLauncher-trollstore-tipa
+          path: com.yzl.launcher.tipa
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-device-log
+          path: build-device.log
+          if-no-files-found: warn
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" YZLLauncher-unsigned.ipa com.yzl.launcher.tipa --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" YZLLauncher-unsigned.ipa com.yzl.launcher.tipa \
+              --title "YZL Launcher iOS $GITHUB_REF_NAME" \
+              --notes "com.yzl.launcher.tipa = TrollStore 包（永久签名 / 自动 JIT，手机直接装）；YZLLauncher-unsigned.ipa = 未签名底包。M0/M1 外壳，引擎尚未接入。Built from $GITHUB_SHA."
+          fi

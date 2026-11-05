@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- TrollStore 专用：用 ldid 伪签后由 TrollStore 安装，永久不掉签。
+	     参考 Amethyst 的 entitlements.trollstore.xml 思路，按 YZL 自己的需求裁剪。
+	     注意：iOS 15 A12+ 上 dynamic-codesigning / cs.debugger / skip-library-validation
+	     这三个 entitlement 会被系统直接干掉，所以不能写在这里。 -->
+	<key>application-identifier</key>
+	<string>com.yzl.launcher</string>
+	<key>get-task-allow</key>
+	<true/>
+
+	<!-- 内存上限：JVM 堆需要更大的连续虚拟地址空间 -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+	<key>com.apple.private.memorystatus</key>
+	<true/>
+
+	<!-- 允许 App 自己开 JIT（免电脑）：需要脱离沙盒 -->
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.private.security.storage.AppDataContainers</key>
+	<true/>
+
+	<!-- 脱离沙盒后仍需显式放行的系统服务 -->
+	<key>com.apple.security.iokit-user-client-class</key>
+	<array>
+		<string>IOSurfaceRootUserClient</string>
+		<string>AGXDeviceUserClient</string>
+		<string>AGXSharedUserClient</string>
+		<string>AGXCommandQueue</string>
+		<string>AGXDevice</string>
+	</array>
+	<key>com.apple.security.exception.mach-lookup.global-name</key>
+	<array>
+		<string>com.apple.nsurlsessiond</string>
+		<string>com.apple.nsurlsessiond.NSURLSessionProxyService</string>
+		<string>com.apple.nsurlstorage-cache</string>
+	</array>
+</dict>
+</plist>

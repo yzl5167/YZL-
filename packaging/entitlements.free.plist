@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 免费 Apple ID 自签用（Sideloadly / AltStore / zsign）。
+	     只保留个人开发者描述文件一定包含的能力。
+	     不要加 increased-memory-limit / extended-virtual-addressing：
+	     免费 profile 不含这两项，写了会在安装阶段被拒或整包签名失效。
+	     TEAMID 占位由 scripts/sign-ipa.ps1 替换成真实 Team ID。 -->
+	<key>get-task-allow</key>
+	<true/>
+
+	<key>application-identifier</key>
+	<string>TEAMID.com.yzl.launcher</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>TEAMID</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>TEAMID.com.yzl.launcher</string>
+	</array>
+</dict>
+</plist>
