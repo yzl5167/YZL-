@@ -54,7 +54,7 @@ case "$MODE" in
       echo "缺少 ldid：先执行 brew install ldid" >&2
       exit 1
     fi
-    OUT_DIR="$(dirname "$SRC_IPA")"
+    OUT_DIR="$(cd "$(dirname "$SRC_IPA")" && pwd)"
     OUT="$OUT_DIR/${BUNDLE_ID}.tipa"
 
     # 主程序用 TrollStore 权限；内嵌库只做 ad-hoc 伪签
