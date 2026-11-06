@@ -42,17 +42,24 @@ bash "$REPO_ROOT/engine/apply-fork-patches.sh" "$WORK/amethyst" || {
   echo "[engine] WARN: 补丁应用失败，继续构建未打补丁的基线（UI 注入链路暂不可用）"
 }
 
-echo "[engine] 4/6 build YZLUI.framework (best effort)"
+echo "[engine] 4/6 build YZLUI.framework"
 YZLUI_FW=""
+set -o pipefail
 if ( cd "$REPO_ROOT" && xcodegen generate && \
      xcodebuild -project YZLLauncher.xcodeproj -target YZLUI -configuration Release \
        -sdk iphoneos -destination 'generic/platform=iOS' \
        SYMROOT="$REPO_ROOT/yzlui-sym" \
        CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$WORK/yzlui-build.log" ); then
   YZLUI_FW="$REPO_ROOT/yzlui-sym/Release-iphoneos/YZLUI.framework"
-  [ -d "$YZLUI_FW" ] || { echo "[engine] WARN: YZLUI.framework 未找到"; YZLUI_FW=""; }
+  if [ ! -f "$YZLUI_FW/YZLUI" ]; then
+    echo "[engine] ERROR: YZLUI.framework 缺少可执行文件（只有资源，没有 Mach-O）" >&2
+    grep -n "error:" "$WORK/yzlui-build.log" | head -40 >&2 || true
+    exit 1
+  fi
 else
-  echo "[engine] WARN: YZLUI 构建失败，payload 将不含 YZL UI"
+  echo "[engine] ERROR: YZLUI 构建失败；拒绝生成没有 YZL UI 的引擎包" >&2
+  grep -n "error:" "$WORK/yzlui-build.log" | head -40 >&2 || true
+  exit 1
 fi
 
 echo "[engine] 4.5/6 pre-stage JRE archives（RUNNER=1 时 Makefile 跳过下载）"
@@ -69,20 +76,32 @@ make -j"$(sysctl -n hw.ncpu)" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 2>
 
 echo "[engine] 6/6 inject UI framework + package"
 APP="$(find "$WORK/amethyst/artifacts" -type d -name 'AngelAuraAmethyst.app' | head -1)"
-if [ -n "$YZLUI_FW" ] && [ -n "$APP" ]; then
-  mkdir -p "$APP/Frameworks"
-  cp -R "$YZLUI_FW" "$APP/Frameworks/"
-  ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI" || echo "[engine] WARN: YZLUI 伪签失败"
-  echo "[engine] YZLUI.framework 已注入 $APP/Frameworks"
+if [ -z "$YZLUI_FW" ] || [ -z "$APP" ]; then
+  echo "[engine] ERROR: 缺 YZLUI.framework 或 app，拒绝打包空壳引擎" >&2
+  exit 1
 fi
+mkdir -p "$APP/Frameworks"
+rm -rf "$APP/Frameworks/YZLUI.framework"
+cp -R "$YZLUI_FW" "$APP/Frameworks/"
+if [ ! -f "$APP/Frameworks/YZLUI.framework/YZLUI" ]; then
+  echo "[engine] ERROR: 注入后缺少 YZLUI 可执行文件" >&2
+  exit 1
+fi
+ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI"
+echo "[engine] YZLUI.framework 已注入 $APP/Frameworks"
 
 DIST="$REPO_ROOT/dist-engine"
 mkdir -p "$DIST"
 if [ -d "$WORK/amethyst/artifacts/Payload" ]; then
   ( cd "$WORK/amethyst/artifacts" && zip -qry "$DIST/YZL-engine.tipa" Payload )
   cp "$DIST/YZL-engine.tipa" "$DIST/YZL-engine-unsigned.ipa"
+  if ! unzip -l "$DIST/YZL-engine.tipa" | grep -q 'Frameworks/YZLUI.framework/YZLUI$'; then
+    echo "[engine] ERROR: 最终 tipa 缺少 YZLUI.framework/YZLUI" >&2
+    exit 1
+  fi
 else
-  echo "[engine] WARN: Payload 目录不存在，只有日志可取"
+  echo "[engine] ERROR: Payload 目录不存在，只有日志可取" >&2
+  exit 1
 fi
 cp "$WORK/build.log" "$DIST/build-engine.log" 2>/dev/null || true
 [ -f "$WORK/yzlui-build.log" ] && cp "$WORK/yzlui-build.log" "$DIST/" || true
