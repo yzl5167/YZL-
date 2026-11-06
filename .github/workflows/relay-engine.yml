@@ -36,21 +36,26 @@ jobs:
         run: |
           set -uo pipefail
           ls -la "$TIPA"
+          echo '--- pixeldrain ---'
+          curl -sS --max-time 900 -T "$TIPA" https://pixeldrain.com/api/file/ | tee pixel.json || true
+          echo '--- filebin ---'
+          BIN="yzl-$(date +%s)"
+          curl -sS --max-time 900 -X POST --data-binary "@$TIPA" \
+            -H "filename: YZL-engine.tipa" -H "Content-Type: application/octet-stream" \
+            "https://filebin.net/$BIN/YZL-engine.tipa" | tee filebin.json || true
+          echo "FILEBIN_BIN=$BIN" >> "$GITHUB_ENV"
+          echo '--- uguu ---'
+          curl -sS --max-time 900 -F "files[]=@$TIPA" "https://uguu.se/upload?output=text" | tee uguu.txt || true
           echo '--- litterbox (72h) ---'
           curl -sS --max-time 900 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$TIPA" https://litterbox.catbox.moe/resources/internals/api.php | tee litter.txt || true
-          echo '--- 0x0.st ---'
-          curl -sS --max-time 900 -F "file=@$TIPA" https://0x0.st | tee zero.txt || true
-          echo '--- temp.sh ---'
-          curl -sS --max-time 900 --upload-file "$TIPA" https://temp.sh/upload | tee temp.txt || true
-          echo '--- bashupload ---'
-          curl -sS --max-time 900 -T "$TIPA" https://bashupload.com/ | tee bash.txt || true
           echo '--- gofile ---'
           curl -sS --max-time 900 -F "file=@$TIPA" https://store1.gofile.io/uploadFile | tee gofile.json || true
 
       - name: Print links
         if: always()
         run: |
-          for f in litter.txt zero.txt temp.txt bash.txt gofile.json; do
+          echo "FILEBIN_BIN=${FILEBIN_BIN:-}"
+          for f in pixel.json filebin.json uguu.txt litter.txt gofile.json; do
             echo "===== $f ====="
             cat "$f" 2>/dev/null || true
             echo
