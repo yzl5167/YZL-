@@ -31,7 +31,10 @@ final class EngineIntegrationTests: XCTestCase {
             mainClass: "net.minecraft.client.main.Main",
             libraries: [],
             assetIndex: nil,
-            assets: "5"
+            assets: "5",
+            inheritsFrom: nil,
+            minecraftArguments: nil,
+            arguments: nil
         )
         let version = MinecraftVersion(
             id: "1.20.1",
