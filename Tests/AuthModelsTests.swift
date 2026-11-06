@@ -54,7 +54,13 @@ final class AuthModelsTests: XCTestCase {
 
         let token = try JSONDecoder().decode(XboxToken.self, from: json)
         XCTAssertEqual(token.token, "xbox-token")
-        XCTAssertEqual(token.displayClaims.xui.first?.uhs, "user-hash")
+        // DisplayClaims 不再是必需字段：UHS 从 XSTS 响应取，
+        // 微软某些响应不带 DisplayClaims 时登录也应继续。
+        let minimal = try JSONDecoder().decode(
+            XboxToken.self,
+            from: #"{"Token":"xbox-token"}"#.data(using: .utf8)!
+        )
+        XCTAssertEqual(minimal.token, "xbox-token")
     }
 
     func testXSTSTokenDecoding() throws {

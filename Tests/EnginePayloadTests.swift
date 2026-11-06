@@ -174,7 +174,10 @@ final class EnginePayloadTests: XCTestCase {
             mainClass: "net.minecraft.client.main.Main",
             libraries: [],
             assetIndex: nil,
-            assets: "5"
+            assets: "5",
+            inheritsFrom: nil,
+            minecraftArguments: nil,
+            arguments: nil
         )
         return LaunchPlan(
             version: version,
