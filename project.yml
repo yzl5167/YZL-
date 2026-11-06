@@ -77,6 +77,10 @@ targets:
           - "Info.plist"
           - "App/YZLLauncherApp.swift"
       - path: YZLUI
+    dependencies:
+      # 共享源码里的微软网页登录使用 WKWebView；framework target 必须显式链接，
+      # 否则会出现「资源已产出但 YZLUI 二进制链接失败」的假成功。
+      - sdk: WebKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yzl.launcher.ui
