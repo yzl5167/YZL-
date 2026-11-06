@@ -133,16 +133,14 @@ struct YZLEngineHost: LauncherEngine {
         guard let surfaceClass = classLookup("SurfaceViewController") else {
             return
         }
-        // objc_msgSend 本身也是运行时符号，dlsym 取用
-        guard let msgSendSymbol = dlsym(nil, "objc_msgSend") else { return }
-        typealias MsgSend = @convention(c) (AnyObject, Selector, Any?) -> UnsafeRawPointer?
-        let msgSend = unsafeBitCast(msgSendSymbol, to: MsgSend.self)
-
-        let allocator = (surfaceClass as NSObject.Type).alloc()
-        let initialized = msgSend(allocator, NSSelectorFromString("initWithMetadata:"), metadata)
-        guard initialized != nil else { return }
-
-        let surface = Unmanaged<AnyObject>.fromOpaque(initialized).takeRetainedValue()
+        // classLookup 返回 AnyClass（any AnyObject.Type），不能强转 NSObject.Type，
+        // 也不存在 NSObject.Type.alloc()。改用 ObjC 动态派发发 alloc / initWithMetadata:
+        // 两条消息，保留 fork 的真实初始化签名，编译期仍零依赖 Amethyst 源码。
+        guard let allocator = (surfaceClass as AnyObject)
+            .perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() else { return }
+        guard let surface = allocator
+            .perform(NSSelectorFromString("initWithMetadata:"), with: metadata)?
+            .takeRetainedValue() else { return }
         guard let surfaceVC = surface as? UIViewController else { return }
 
         let keyWindow = UIApplication.shared.connectedScenes
