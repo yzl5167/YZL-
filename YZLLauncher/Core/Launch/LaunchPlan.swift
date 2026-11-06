@@ -48,17 +48,18 @@ enum LaunchPlanError: LocalizedError {
 
 enum LaunchPlanBuilder {
     /// 客户端 jar 在前，随后是按 Mojang 规则过滤后的依赖库；路径去重顺序与安装器一致。
+    /// 加载器 profile 的 Maven 坐标库（如 `net.fabricmc:fabric-loader:x`）同样按推导路径入列。
     static func classpath(detail: VersionDetail, layout: InstallLayout) -> [URL] {
         var classpath = [layout.clientJar]
         var seenPaths = Set<String>()
 
         for library in detail.libraries ?? [] {
             guard InstallPlanner.isAllowed(rules: library.rules, osName: "ios") else { continue }
-            guard let path = library.downloads?.artifact?.path,
-                  !path.isEmpty,
-                  !seenPaths.contains(path) else { continue }
-            seenPaths.insert(path)
-            classpath.append(layout.libraryURL(path: path))
+            guard let resolved = InstallPlanner.resolveLibrary(library),
+                  !resolved.path.isEmpty,
+                  !seenPaths.contains(resolved.path) else { continue }
+            seenPaths.insert(resolved.path)
+            classpath.append(layout.libraryURL(path: resolved.path))
         }
         return classpath
     }

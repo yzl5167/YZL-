@@ -184,7 +184,8 @@ def main() -> int:
 
     bash = shutil.which("bash")
     if bash:
-        for path in sorted((ROOT / "scripts").glob("*.sh")):
+        sh_paths = sorted((ROOT / "scripts").glob("*.sh")) + sorted((ROOT / "engine").rglob("*.sh"))
+        for path in sh_paths:
             counts["sh"] += 1
             result = subprocess.run(
                 [bash, "-n", str(path)], capture_output=True, text=True
@@ -194,7 +195,7 @@ def main() -> int:
                     f"{path.relative_to(ROOT)}: shell 语法错误 —— {result.stderr.strip()}"
                 )
 
-    for required in ["project.yml", "YZLLauncher", "Tests", "scripts", "packaging"]:
+    for required in ["project.yml", "YZLLauncher", "Tests", "scripts", "packaging", "engine"]:
         if not (ROOT / required).exists():
             problems.append(f"缺少必需路径：{required}")
 

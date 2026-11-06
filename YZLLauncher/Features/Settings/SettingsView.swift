@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("memoryMB") private var memoryMB: Double = 2048
     @AppStorage(MicrosoftAuth.clientIdKey) private var clientId = MicrosoftAuth.defaultClientId
+    @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.official.rawValue
 
     var body: some View {
         ZStack {
@@ -13,6 +14,7 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     accountCard
                     launchCard
+                    downloadCard
                     diagnosticsCard
                     aboutCard
                     Text("YZL Launcher 与 Amethyst / PojavLauncher 团队无隶属关系。")
@@ -29,6 +31,30 @@ struct SettingsView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             pageHeader
+        }
+    }
+
+    /// 下载源切换（对照 Android / Windows 端的「下载源」设置）。
+    /// 清单、版本详情、加载器 Meta、依赖库与资源对象的请求都会按这里的选择改写。
+    private var downloadCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("下载源")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                Picker("下载源", selection: $downloadSource) {
+                    ForEach(DownloadSource.allCases) { source in
+                        Text(source.displayName).tag(source.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(DownloadSource(rawValue: downloadSource)?.hint ?? "")
+                    .font(.system(size: 10))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+            }
         }
     }
 

@@ -31,6 +31,16 @@ struct MinecraftVersion: Codable, Identifiable, Hashable {
         "\(typeLabel) · \(releaseDateText)"
     }
 
+    /// 加载器 profile 的标识徽章（Fabric / Forge / Quilt / NeoForge）。
+    /// Mojang 官方版本返回 nil。对照 Android / Windows 端的加载器标识。
+    var loaderLabel: String? {
+        if id.hasPrefix("fabric-loader-") { return "Fabric" }
+        if id.hasPrefix("forge-") { return "Forge" }
+        if id.hasPrefix("neoforge-") { return "NeoForge" }
+        if id.hasPrefix("quilt-loader-") { return "Quilt" }
+        return nil
+    }
+
     var releaseDate: Date? {
         Self.isoFormatter.date(from: releaseTime)
     }

@@ -33,13 +33,15 @@ enum ArgumentResolver {
     /// 解析游戏参数。优先用 `arguments.game`；否则用旧式 `minecraftArguments` 字符串；
     /// 两者皆无（自定义 / 精简版本）回退到启动器内置的安全参数集。
     static func gameArguments(version: VersionDetail, context: Context) -> [String] {
-        if let game = version.arguments?.game {
-            return expand(tokens: game, context: context)
+        // 继承 profile 的 `game: []` 语义是「不追加」而不是「清空」；
+        // 为空时继续回退到旧式参数串 / 内置兜底集，避免生成没有账号信息的命令行。
+        if let game = version.arguments?.game, !game.isEmpty {
+            return cleanup(expand(tokens: game, context: context))
         }
         if let legacy = version.minecraftArguments, !legacy.isEmpty {
-            return legacy
+            return cleanup(legacy
                 .split(separator: " ")
-                .map { substitute(String($0), context) }
+                .map { substitute(String($0), context) })
         }
         return fallbackGameArguments(context: context)
     }
@@ -50,7 +52,9 @@ enum ArgumentResolver {
         guard let jvm = version.arguments?.jvm else {
             return []
         }
-        return stripClasspathTokens(expand(tokens: jvm, context: context))
+        // 必须在占位符替换「之前」按原始 token 剥离：expand 会把 ${classpath}
+        // 换成真实路径，之后再按字面量查找永远命中不了，命令行会出现第二组 -cp。
+        return expand(tokens: stripClasspathTokens(jvm), context: context)
     }
 
     // MARK: - 占位符
@@ -63,6 +67,9 @@ enum ArgumentResolver {
             ("${auth_access_token}", context.accessToken),
             ("${auth_session}", context.accessToken),
             ("${auth_xuid}", context.xuid),
+            ("${user_type}", context.userType),
+            ("${clientid}", ""),
+            ("${user_properties}", "{}"),
             ("${version_name}", context.versionID),
             ("${version_type}", context.versionType),
             ("${assets_root}", context.assetsDir),
@@ -73,7 +80,11 @@ enum ArgumentResolver {
             ("${launcher_version}", context.launcherVersion),
             ("${resolution_width}", context.width.map { String($0) } ?? ""),
             ("${resolution_height}", context.height.map { String($0) } ?? ""),
-            ("${classpath}", context.classpath)
+            ("${classpath}", context.classpath),
+            ("${quickPlayPath}", ""),
+            ("${quickPlaySingleplayer}", ""),
+            ("${quickPlayMultiplayer}", ""),
+            ("${quickPlayRealms}", "")
         ]
         for (placeholder, value) in pairs {
             result = result.replacingOccurrences(of: placeholder, with: value)
@@ -136,19 +147,42 @@ enum ArgumentResolver {
         return true
     }
 
-    /// 移除版本 jvm 参数里由 `${classpath}` 占位符衍生出的 classpath 项，
-    /// 让启动命令的 `-cp` 成为唯一权威来源，避免重复或主类被误吞。
-    private static func stripClasspathTokens(_ args: [String]) -> [String] {
-        var result: [String] = []
-        for arg in args {
-            if arg.contains("${classpath}") {
-                // 形如 `-Djava.class.path=${classpath}`，连同可能紧邻的 `-cp` 一起丢弃。
-                if let last = result.last, last == "-cp" {
+    /// 移除版本 jvm 参数里由 `${classpath}` 占位符衍生出的 token，
+    /// 让启动命令的 `-cp` 成为唯一权威来源。必须在 `expand` 之前调用。
+    private static func stripClasspathTokens(_ tokens: [VersionDetail.ArgumentToken]) -> [VersionDetail.ArgumentToken] {
+        var result: [VersionDetail.ArgumentToken] = []
+        for token in tokens {
+            if case .string(let value) = token, value.contains("${classpath}") {
+                // 形如 `-Djava.class.path=${classpath}`，连同紧邻的 `-cp` 一起丢弃。
+                if let last = result.last,
+                   case .string(let previous) = last,
+                   previous == "-cp" {
                     result.removeLast()
                 }
                 continue
             }
-            result.append(arg)
+            result.append(token)
+        }
+        return result
+    }
+
+    /// quickPlay 系列 feature 启动器不实现，占位符已替换为空值；
+    /// 把这些 flag 连同它后面的值一起删掉，避免孤立参数混进命令行。
+    private static func cleanup(_ args: [String]) -> [String] {
+        let unsupported: Set<String> = [
+            "--quickPlayPath", "--quickPlaySingleplayer",
+            "--quickPlayMultiplayer", "--quickPlayRealms"
+        ]
+        var result: [String] = []
+        var index = 0
+        while index < args.count {
+            let value = args[index]
+            if unsupported.contains(value) {
+                index += (index + 1 < args.count) ? 2 : 1
+                continue
+            }
+            result.append(value)
+            index += 1
         }
         return result
     }

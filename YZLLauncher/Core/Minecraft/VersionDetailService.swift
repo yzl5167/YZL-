@@ -2,7 +2,9 @@ import Foundation
 
 struct VersionDetailService {
     func fetch(detailURL: URL) async throws -> VersionDetail {
-        var request = URLRequest(url: detailURL)
+        // 版本详情可能来自 Mojang（piston-meta）或加载器 Meta（fabric/quilt），
+        // 两者都在镜像映射表里，按下载源设置统一改写。
+        var request = URLRequest(url: MirrorPolicy.rewrite(detailURL))
         request.timeoutInterval = 20
         request.setValue("YZLLauncher/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
 

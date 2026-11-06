@@ -2,22 +2,32 @@ import SwiftUI
 
 /// 主页：仿 PC 端「安卓式主页」——白底、内容垂直居中，只有大头像、当前版本和启动按钮。
 /// 结构与 PC `MainWindow.xaml` 的活跃主页、安卓 `HomeScreen` 完全一致。
+/// 用 ScrollView + minHeight 居中：固定横屏的小屏设备（SE / 8）可用高度不足 400pt，
+/// 纯 VStack + Spacer 会把内容裁掉；横幅改为底部 overlay，不再参与布局挤占主体。
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        ZStack {
-            YZLTheme.card
-                .ignoresSafeArea()
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                YZLTheme.card
+                    .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer()
-                centered
-                Spacer()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 12)
+                        centered
+                        Spacer(minLength: 12)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, showBanner ? 100 : 8)
+                }
+
                 bottomBanner
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 12)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 8)
         }
     }
 
@@ -67,13 +77,21 @@ struct HomeView: View {
     private var bottomBanner: some View {
         Group {
             if showBanner {
-                InstallProgressBanner(queue: appState.installQueue) {
-                    appState.selectedTab = .versions
-                }
-                .padding(.horizontal, 4)
-                .padding(.bottom, 12)
+                InstallProgressBanner(
+                    queue: appState.installQueue,
+                    openVersions: { openVersions(for: appState.installQueue.state.batchID) },
+                    dismiss: { appState.installQueue.dismissTerminalState() }
+                )
             }
         }
+    }
+
+    /// 「去重试 / 去继续」要带上出问题的版本 id，否则进版本页后不会选中它。
+    private func openVersions(for batchID: String?) {
+        if let batchID {
+            appState.pendingInstallVersionID = batchID
+        }
+        appState.selectedTab = .versions
     }
 
     private var showBanner: Bool {
@@ -177,10 +195,11 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    /// 主页底部安装进度条（仅在安装/失败/取消态显示，保持主页干净）。
+    /// 主页底部安装进度条（仅在安装/失败/取消态显示，失败与取消可主动清除）。
     private struct InstallProgressBanner: View {
         @ObservedObject var queue: DownloadQueue
         var openVersions: () -> Void
+        var dismiss: () -> Void
 
         var body: some View {
             switch queue.state.phase {
@@ -229,6 +248,10 @@ struct HomeView: View {
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(YZLTheme.accentText)
                             .buttonStyle(.plain)
+                        Button("清除", action: dismiss)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(YZLTheme.muted)
+                            .buttonStyle(.plain)
                     }
                 }
             case .cancelled:
@@ -241,6 +264,10 @@ struct HomeView: View {
                         Button("去继续", action: openVersions)
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(YZLTheme.accentText)
+                            .buttonStyle(.plain)
+                        Button("清除", action: dismiss)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(YZLTheme.muted)
                             .buttonStyle(.plain)
                     }
                 }

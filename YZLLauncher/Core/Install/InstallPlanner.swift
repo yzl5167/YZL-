@@ -55,33 +55,36 @@ enum InstallPlanner {
     static func plan(detail: VersionDetail, layout: InstallLayout, osName: String = "ios") -> Plan {
         var files: [PlannedFile] = []
 
-        let client = detail.clientArtifact
-        files.append(PlannedFile(
-            kind: .clientJar,
-            spec: makeSpec(
-                id: "client-\(layout.safeName)",
-                url: client.url,
-                destination: layout.clientJar,
-                sha1: client.sha1,
-                size: client.size
-            )
-        ))
+        // Mojang 官方版本有客户端 jar；继承类 profile（Fabric/Forge）没有，
+        // 客户端 jar 由父版本提供——安装时调用方应先拍平继承链再进来。
+        if let client = detail.clientArtifact {
+            files.append(PlannedFile(
+                kind: .clientJar,
+                spec: makeSpec(
+                    id: "client-\(layout.safeName)",
+                    url: client.url,
+                    destination: layout.clientJar,
+                    sha1: client.sha1,
+                    size: client.size
+                )
+            ))
+        }
 
         var seenLibraryPaths = Set<String>()
         for library in detail.libraries ?? [] {
             guard isAllowed(rules: library.rules, osName: osName) else { continue }
-            guard let artifact = library.downloads?.artifact, let path = artifact.path else { continue }
-            guard !seenLibraryPaths.contains(path) else { continue }
-            seenLibraryPaths.insert(path)
+            guard let resolved = resolveLibrary(library) else { continue }
+            guard !seenLibraryPaths.contains(resolved.path) else { continue }
+            seenLibraryPaths.insert(resolved.path)
 
             files.append(PlannedFile(
                 kind: .library,
                 spec: makeSpec(
-                    id: "lib-\(path)",
-                    url: artifact.url,
-                    destination: layout.libraryURL(path: path),
-                    sha1: artifact.sha1,
-                    size: artifact.size
+                    id: "lib-\(resolved.path)",
+                    url: resolved.url,
+                    destination: layout.libraryURL(path: resolved.path),
+                    sha1: resolved.sha1,
+                    size: resolved.size
                 )
             ))
         }
@@ -126,11 +129,56 @@ enum InstallPlanner {
         return Plan(versionID: versionID, files: files)
     }
 
+    /// 解析后的库文件信息：Mojang 官方格式走 `downloads.artifact`，
+    /// 加载器 profile（只有 `name` + `url` 仓库根 + 顶层 sha1/size）走 Maven 坐标推导。
+    struct ResolvedLibrary: Equatable {
+        let path: String
+        let url: URL
+        let sha1: String?
+        let size: Int64?
+    }
+
+    /// 把一条版本库条目解析成可下载的文件；两种格式都解析不出来时返回 nil。
+    static func resolveLibrary(_ library: VersionDetail.Library) -> ResolvedLibrary? {
+        if let artifact = library.downloads?.artifact, let path = artifact.path, !path.isEmpty {
+            return ResolvedLibrary(
+                path: path,
+                url: artifact.url,
+                sha1: artifact.sha1 ?? library.sha1,
+                size: artifact.size ?? library.size
+            )
+        }
+        // artifact 有 url 但没有 path 的罕见情形：从 Maven 坐标补 path。
+        if let artifact = library.downloads?.artifact, artifact.path == nil || artifact.path?.isEmpty == true {
+            guard let coordinates = MavenCoordinates(library.name) else { return nil }
+            return ResolvedLibrary(
+                path: coordinates.artifactPath,
+                url: artifact.url,
+                sha1: artifact.sha1 ?? library.sha1,
+                size: artifact.size ?? library.size
+            )
+        }
+        // 加载器 profile 格式：只有 Maven 坐标 + 仓库根，jar 地址按 Maven 布局推导。
+        guard let coordinates = MavenCoordinates(library.name),
+              let url = coordinates.fileURL(repoBase: library.url?.absoluteString) else {
+            return nil
+        }
+        return ResolvedLibrary(
+            path: coordinates.artifactPath,
+            url: url,
+            sha1: library.sha1,
+            size: library.size
+        )
+    }
+
     private static func makeSpec(id: String, url: URL, destination: URL, sha1: String?, size: Int64?) -> DownloadSpec {
+        // 下载源统一在生成 spec 时改写：客户端 jar / 库 / 资源对象分别来自
+        // piston-data、libraries.minecraft.net（或 maven）、resources.download.minecraft.net，
+        // 全部命中 MirrorPolicy 的映射表。
         let bytes = size ?? 0
         return DownloadSpec(
             id: id,
-            url: url,
+            url: MirrorPolicy.rewrite(url),
             destination: destination,
             expectedSHA1: sha1,
             expectedSize: size,

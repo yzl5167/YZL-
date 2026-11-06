@@ -43,7 +43,26 @@ enum YZLTheme {
     static func accent(for colorScheme: ColorScheme) -> Color {
         colorScheme == .dark ? Color(red: 0.298, green: 0.561, blue: 0.965) : YZLTheme.accent
     }
+
+    /// bundle 感知的图标加载：独立 App 里图标在主 bundle；
+    /// M2-b fork 里外壳以 YZLUI.framework 注入，图标在 framework bundle。
+    /// SwiftUI 的 Image(name) 只查主 bundle，所以 framework 命中时
+    /// 先解析成 UIImage 再包装；两侧都未命中时退回主 bundle 查找（布局不塌）。
+    static func icon(_ name: String) -> Image {
+        // 独立 App：资源在主 bundle；M2-b fork：外壳编进 YZLUI.framework。
+        if let image = UIImage(named: name, in: Bundle(for: BundleToken.self), compatibleWith: nil) {
+            return Image(uiImage: image)
+        }
+        if let image = UIImage(named: name, in: .main, compatibleWith: nil) {
+            return Image(uiImage: image)
+        }
+        // 两个 bundle 都没命中时给可见占位，避免图标静默空白难以排查。
+        return Image(systemName: "photo")
+    }
 }
+
+/// 私有标记类：只为 Bundle(for:) 提供定位锚点。
+private final class BundleToken {}
 
 struct PageBackground: View {
     var body: some View {

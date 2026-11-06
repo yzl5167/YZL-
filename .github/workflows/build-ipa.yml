@@ -120,7 +120,6 @@ jobs:
 
       - name: Run unit tests
         if: steps.sim.outputs.skip != 'true'
-        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild test \

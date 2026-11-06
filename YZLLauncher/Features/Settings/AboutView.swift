@@ -32,7 +32,7 @@ struct AboutView: View {
     private var brandCard: some View {
         YZLCard {
             HStack(spacing: 14) {
-                Image("BrandIcon")
+                YZLTheme.icon("BrandIcon")
                     .resizable()
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))

@@ -8,9 +8,10 @@ final class VersionDetailTests: XCTestCase {
         XCTAssertEqual(detail.type, "release")
         XCTAssertEqual(detail.mainClass, "net.minecraft.client.main.Main")
         XCTAssertEqual(detail.javaVersion?.majorVersion, 17)
-        XCTAssertEqual(detail.clientArtifact.size, 23_028_853)
-        XCTAssertEqual(detail.clientArtifact.sha1, "0c3ec587af28e5a785c0b4a7b8a30f9a8f78f838")
-        XCTAssertEqual(detail.clientArtifact.url.host, "piston-data.mojang.com")
+        let client17 = try XCTUnwrap(detail.clientArtifact, "官方版本必须带客户端 jar")
+        XCTAssertEqual(client17.size, 23_028_853)
+        XCTAssertEqual(client17.sha1, "0c3ec587af28e5a785c0b4a7b8a30f9a8f78f838")
+        XCTAssertEqual(client17.url.host, "piston-data.mojang.com")
         XCTAssertTrue(detail.javaRequirement.contains("Java 17"))
         XCTAssertEqual(detail.libraries?.count, 88)
         XCTAssertEqual(detail.assetIndex?.id, "5")
@@ -22,8 +23,9 @@ final class VersionDetailTests: XCTestCase {
         let detail = try decode(sample: "VersionDetail_1.12.2")
         XCTAssertEqual(detail.id, "1.12.2")
         XCTAssertEqual(detail.javaVersion?.majorVersion, 8)
-        XCTAssertEqual(detail.clientArtifact.size, 10_180_113)
-        XCTAssertEqual(detail.clientArtifact.sha1, "0f275bc1547d01fa5f56ba34bdc87d981ee12daf")
+        let client8 = try XCTUnwrap(detail.clientArtifact)
+        XCTAssertEqual(client8.size, 10_180_113)
+        XCTAssertEqual(client8.sha1, "0f275bc1547d01fa5f56ba34bdc87d981ee12daf")
     }
 
     private func decode(sample: String) throws -> VersionDetail {

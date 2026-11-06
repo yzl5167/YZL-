@@ -76,14 +76,33 @@ final class VersionMergerTests: XCTestCase {
         XCTAssertEqual(merged.downloads?.client.url.absoluteString, "https://example.com/1.20.1.jar")
     }
 
-    func testChildArgumentsOverrideParent() throws {
-        let parentArgs = VersionDetail.VersionArguments(jvm: [.string("-Xmx1G")], game: nil)
-        let childArgs = VersionDetail.VersionArguments(jvm: [.string("-Xmx2G")], game: nil)
+    /// Mojang 继承语义是数组「父 + 子」拼接。加载器 profile 的 `game: []`
+    /// 表示不追加任何参数，绝不能把父版本的 --username / --uuid 清空。
+    func testChildArgumentsAppendToParentInsteadOfOverriding() throws {
+        let parentArgs = VersionDetail.VersionArguments(
+            jvm: [.string("-Xmx1G")],
+            game: [.string("--username"), .string("${auth_player_name}")]
+        )
+        let childArgs = VersionDetail.VersionArguments(jvm: [.string("-Xmx2G")], game: [])
         let parent = version(id: "1.20.1", arguments: parentArgs)
-        let child = version(id: "forge-1.20.1", inheritsFrom: "1.20.1", arguments: childArgs)
+        let child = version(id: "fabric-1.20.1", inheritsFrom: "1.20.1", arguments: childArgs)
 
         let merged = VersionMerger.merge(root: child) { _ in parent }
-        XCTAssertEqual(merged.arguments?.jvm, [.string("-Xmx2G")])
+        XCTAssertEqual(merged.arguments?.jvm, [.string("-Xmx1G"), .string("-Xmx2G")])
+        XCTAssertEqual(merged.arguments?.game,
+                       [.string("--username"), .string("${auth_player_name}")])
+    }
+
+    func testCyclicInheritanceStopsInsteadOfRecursingForever() throws {
+        let a = version(id: "a", inheritsFrom: "b", mainClass: "A")
+        let b = version(id: "b", inheritsFrom: "a", mainClass: "B")
+        let merged = VersionMerger.merge(root: a) { id in
+            if id == "a" { return a }
+            if id == "b" { return b }
+            return nil
+        }
+        XCTAssertEqual(merged.id, "a")
+        XCTAssertNil(merged.inheritsFrom)
     }
 
     func testMissingParentReturnsRoot() throws {

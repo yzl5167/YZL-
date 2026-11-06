@@ -2,7 +2,8 @@
   "images" : [
     {
       "filename" : "BrandIcon.png",
-      "idiom" : "universal"
+      "idiom" : "universal",
+      "scale" : "1x"
     }
   ],
   "info" : {

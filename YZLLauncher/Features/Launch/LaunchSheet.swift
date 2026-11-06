@@ -264,11 +264,15 @@ struct LaunchSheet: View {
                 Text(needsLogin ? "去登录" : "重新检查")
             }
             .buttonStyle(PrimaryButtonStyle(prominent: true))
+            .disabled(isBusy)
+            .opacity(isBusy ? 0.45 : 1)
 
             Button("关闭") {
                 close()
             }
             .buttonStyle(PrimaryButtonStyle(prominent: false))
+            .disabled(isBusy)
+            .opacity(isBusy ? 0.45 : 1)
         }
         .padding(.horizontal, 24)
         .padding(.top, 10)

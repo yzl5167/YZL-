@@ -76,11 +76,16 @@ struct AvatarView: View {
         }
     }
 
-    /// 账号或皮肤地址变化时重新取图；任务被 SwiftUI 自动取消，不会写回旧头像。
+    /// 账号或皮肤地址变化时重新取图；先清空旧图，避免切换账号时闪现上一个账号的皮肤。
+    /// `yzl-local-skin://` 引用一律只读本地文件，绝不对自定义 scheme 发网络请求。
     @MainActor
     private func reloadTexture() async {
         texture = nil
         guard let raw = skinURL, let url = URL(string: raw) else { return }
+        if url.scheme?.lowercased() == LocalSkinStore.scheme {
+            texture = LocalSkinStore().load(from: url)
+            return
+        }
         texture = await SkinTexture.load(from: url)
     }
 
@@ -97,26 +102,43 @@ struct AvatarView: View {
     }
 }
 
-/// 展示整张 64×64 皮肤贴图（纹理表，不是立体模型）。
+/// 展示整张皮肤贴图（纹理表，不是立体模型）。
+/// 统一走 UIImage 加载，才能按贴图原始比例渲染：旧皮肤是 64×32（2:1），
+/// 强制塞进正方形 frame 会把整张纹理表纵向拉伸 2 倍。
 struct SkinBodyView: View {
     let size: CGFloat
     let account: MicrosoftAccount?
 
+    @State private var texture: UIImage?
+
+    private var skinReference: String? { account?.skinURL }
+
     var body: some View {
-        if let account, let url = URL(string: account.skinURL ?? "") {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image
-                        .resizable()
-                        .interpolation(.none)
-                        .frame(width: size, height: size)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else {
-                    AvatarView(size: size, account: account)
-                }
+        Group {
+            if let texture {
+                Image(uiImage: texture)
+                    .resizable()
+                    .interpolation(.none)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                AvatarView(size: size, account: account)
             }
-        } else {
-            AvatarView(size: size, account: account)
         }
+        .task(id: skinReference) {
+            await reload()
+        }
+    }
+
+    @MainActor
+    private func reload() async {
+        texture = nil
+        guard let raw = skinReference, let url = URL(string: raw) else { return }
+        if url.scheme?.lowercased() == LocalSkinStore.scheme {
+            texture = LocalSkinStore().load(from: url)
+            return
+        }
+        texture = await SkinTexture.load(from: url)
     }
 }

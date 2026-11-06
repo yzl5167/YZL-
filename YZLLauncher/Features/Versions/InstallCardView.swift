@@ -5,18 +5,28 @@ struct InstallCardView: View {
     @ObservedObject var model: VersionDetailViewModel
     @ObservedObject var queue: DownloadQueue
     var onInstalled: ((VersionDetail, Int, Int64) -> Void)?
+    /// 卡片标题与说明：原版安装与 Fabric 安装共用同一套进度/状态 UI。
+    var title: String = "安装原版文件"
+    var subtitle: String = "客户端 jar + iOS 适用的依赖库 + 资源索引 + 资源对象。全部文件通过 SHA-1 后才会记为“已安装”，之后主页的启动按钮才会放行。"
 
     var body: some View {
         YZLCard(padding: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("安装原版文件")
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
 
-                Text("客户端 jar + iOS 适用的依赖库 + 资源索引 + 资源对象。全部文件通过 SHA-1 后才会记为“已安装”，之后主页的启动按钮才会放行。")
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
+
+                if let note = model.inheritanceNote {
+                    Text(note)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.accentText)
+                        .lineSpacing(2)
+                }
 
                 if let summary = model.installSummary {
                     Text(summary)

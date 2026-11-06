@@ -104,6 +104,22 @@ final class DownloadQueue: ObservableObject {
         runTask?.cancel()
     }
 
+    /// 失败 / 取消是终态，用户需要能主动清掉主页横幅，否则会一直常驻。
+    /// 只重置展示状态，不动已下载的分片（断点续传数据仍保留）。
+    func dismissTerminalState() {
+        switch state.phase {
+        case .failed, .cancelled:
+            break
+        default:
+            return
+        }
+        guard runTask == nil else { return }
+        var next = state
+        next.phase = .idle
+        next.failures = []
+        state = next
+    }
+
     private func execute(_ specs: [DownloadSpec], completion: (() -> Void)?) async {
         // runOne 是 nonisolated，不能再跨 actor 读 self.downloader：
         // Swift 5 只警告，Swift 6 会直接报错。在 MainActor 上下文先取出再传参。

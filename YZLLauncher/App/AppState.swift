@@ -69,8 +69,9 @@ final class AppState: ObservableObject {
     private let sessionStore = AuthSessionStore()
     private(set) var session: StoredSession?
     private let installedStore = InstalledVersionStore()
-    /// M2 接缝：未注入 EngineBridge 时 isAvailable = false，自检会如实标红。
-    private let engine: LauncherEngine = AmethystEngine()
+    /// 引擎选择：fork 环境（dlsym 命中 launchJVM）用 YZLEngineHost 真启动；
+    /// 纯外壳构建维持 M2 接缝实现（AmethystEngine，如实报未接入）。
+    private let engine: LauncherEngine = LauncherEngineFactory.make()
 
     private var authTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
@@ -92,11 +93,15 @@ final class AppState: ObservableObject {
         engineStatus = engine.isAvailable ? .ready(engine.name) : .notInstalled
         detectJavaRuntime()
 
-        // 离线账号与当前选中账号都从本机持久化恢复。
+        // 离线账号先加载。当前选中账号必须等微软会话恢复完再解析：
+        // 若在 account 仍为 nil 时调用 restoreActiveAccount()，持久化的正版 id
+        // 会被误判为无效并覆盖成第一个离线账号，冷启动后正版选择就丢了。
         offlineAccounts = OfflineAccountStore().load()
-        restoreActiveAccount()
 
-        guard let stored = sessionStore.load() else { return }
+        guard let stored = sessionStore.load() else {
+            restoreActiveAccount()
+            return
+        }
         session = stored
 
         if stored.expiresAt > Date() {
@@ -105,20 +110,27 @@ final class AppState: ObservableObject {
             return
         }
 
-        guard let refresh = stored.refreshToken else { return }
+        guard let refresh = stored.refreshToken else {
+            restoreActiveAccount()
+            return
+        }
         let service = MicrosoftAuthService(clientId: MicrosoftAuth.clientId)
         restoreTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
             do {
                 let token = try await service.refresh(refreshToken: refresh)
+                try Task.checkCancellation()
                 let renewed = try await service.makeSession(from: token)
+                try Task.checkCancellation()
                 self.sessionStore.save(renewed)
                 self.session = renewed
                 self.account = renewed.account
-                self.restoreActiveAccount()
+            } catch is CancellationError {
+                // signOut() 已取消续期，不写回会话、不让已退出的账号复活。
             } catch {
                 // 续期失败时保持未登录，用户仍可手动登录。
             }
+            self.restoreActiveAccount()
             self.restoreTask = nil
         }
     }
@@ -269,6 +281,14 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 设置 / 清除离线账号的本地皮肤（对照 Android 端 SkinScreen 的本地导入）。
+    /// `skinURL` 传 LocalSkinStore 生成的 `yzl-local-skin://` 引用，传 nil 恢复默认。
+    func setOfflineSkin(accountID: String, skinURL: String?) {
+        guard let index = offlineAccounts.firstIndex(where: { $0.id == accountID }) else { return }
+        offlineAccounts[index].skinURL = skinURL
+        OfflineAccountStore().save(offlineAccounts)
+    }
+
     // MARK: - Installed versions
 
     func installedVersion(for id: String) -> InstalledVersion? {
@@ -384,7 +404,7 @@ final class AppState: ObservableObject {
     }
 
     func closeLaunchSheet() {
-        if launchPhase == .checking {
+        if launchPhase == .checking || launchPhase == .launching {
             launchTask?.cancel()
             launchTask = nil
         }
@@ -669,12 +689,24 @@ final class AppState: ObservableObject {
                 status: .ok
             ))
         } else {
-            checks.append(LaunchCheck(
-                id: "engine",
-                title: "启动内核",
-                detail: "Amethyst 内核尚未接入（M2）。安装和启动参数已经准备好，接入后即可拉起 JVM。",
-                status: .failed
-            ))
+            // 按 payload 逐件诊断：缺 JRE / 图形 dylib / Java 桥 jar / cacio，
+            // 与「桥未接入」是不同的问题，提示文案分开。
+            let payload = EnginePayloadLocator.scan()
+            if payload.isLaunchable {
+                checks.append(LaunchCheck(
+                    id: "engine",
+                    title: "启动内核",
+                    detail: "引擎件齐备，但启动桥未接入（当前为纯外壳构建）。安装 fork 引擎构建后即可拉起 JVM。",
+                    status: .failed
+                ))
+            } else {
+                checks.append(LaunchCheck(
+                    id: "engine",
+                    title: "启动内核",
+                    detail: "Amethyst 内核尚未安装（\(payload.summary)）。安装与启动参数已就绪，接入后即可拉起 JVM。",
+                    status: .failed
+                ))
+            }
         }
 
         // 通用策略：同一个二进制在所有设备上按运行时可用内存自动收敛，
@@ -750,6 +782,12 @@ final class AppState: ObservableObject {
             let renewed = try await service.makeSession(from: token)
             sessionStore.save(renewed)
             session = renewed
+            // 档案 id 变化时把当前选中账号跟上，否则 accountInfo(for:) 解析不到，
+            // 启动自检的「账号」项会失败。只做旧 id → 新 id 的映射，不切换账号类型。
+            if activeAccountID == current.account.id, activeAccountID != renewed.account.id {
+                activeAccountID = renewed.account.id
+                persistActiveAccount()
+            }
             account = renewed.account
             return renewed
         } catch {

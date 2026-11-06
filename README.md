@@ -1,5 +1,8 @@
 # YZL Launcher iOS
 
+> **只想编译、不想折腾本机环境？看这一篇就够：[`GitHub编译.md`](GitHub编译.md)** —— 这台 Windows 上没有 Xcode，
+> 走"临时公开仓库 → macOS Runner 免费编译 → 取回 IPA/TIPA → 仓库转回私有/删除"，已实跑验证（run 42026461299 success）。
+
 仿照 PojavLauncher / Amethyst 思路的 Minecraft: Java Edition iOS 启动器（侧载版）。沿用 YZL 桌面端的浅色蓝主题与卡片样式。
 
 > 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。主线交付物是 TrollStore `.tipa`。
@@ -53,9 +56,15 @@
 | `scripts/fetch-ipa.ps1`（Windows 一键触发构建并取回 IPA） | 已实现，PowerShell 5.1 语法校验通过 |
 | **云构建直出 TrollStore `.tipa`（主线）** | 已接入 `build-ipa.yml` / `release-ipa.yml`（ldid 伪签 + artifact + Release 附件），未实跑 |
 | 现代版本参数解析（arguments / minecraftArguments + 占位符替换 + 平台/feature 规则过滤） | 已实现，含单测（ArgumentResolverTests），未编译 |
-| 版本继承合并 VersionMerger（inheritsFrom 拍平，Forge/Fabric 启动前置） | 已实现，含单测（VersionMergerTests）；安装期拍平存盘待接入 |
+| 版本继承合并 VersionMerger（inheritsFrom 拍平，Forge/Fabric 启动前置） | 已实现，含单测（VersionMergerTests）；安装期拍平存盘已接入（`VersionInheritanceResolver` 取回父版本链并逐层落盘，启动不再依赖网络） |
+| Fabric 加载器安装（官方 Meta：加载器列表 → profile → 继承链解析 → Maven 坐标库下载 → 拍平安装） | 已实现，含单测（LoaderInstallTests）；版本页显示已安装加载器版本（fabric-loader-* 合并进清单 + Fabric 徽章）；未编译 |
+| Quilt 加载器安装（meta.quiltmc.org v3，与 Fabric 同链路） | 已实现，含单测（MirrorPolicyTests）；Quilt 条目无 stable 字段，按版本号 beta 兜底；未编译 |
+| 下载源切换（Mojang 官方 / BMCLAPI 镜像） | 已实现，含单测（MirrorPolicyTests）；映射表与 Android 端 Mirrors.kt 一致，端点已实测（清单 278,772 字节、资源对象、fabric-meta 均 200）；清单/详情/Meta/库/资源对象全链路生效；未编译 |
+| 离线皮肤本地导入（相册选图 → 尺寸校验 → Documents/YZLSkins 存 PNG） | 已实现，含单测（MirrorPolicyTests）；`yzl-local-skin://` 引用走本地文件，头像与皮肤页自动生效；微软账号补官网皮肤设置入口；未编译 |
 | 通用自适应（堆上限按可用内存收敛、不按机型出包） | 已实现并补单测，未编译 |
 | 全系统自动分流（6 档，能用免电脑就用免电脑） | 已实现：部署档位判定、JIT 按钮分流、诊断页三行提示、单测；未编译 |
+| **M2-b fork-overlay 架构定案与桥接层** | 已实现：架构决策（`docs/M2B-ENGINE.md`，证据链：原生桥焊在主二进制 / Java 侧自持启动链 / 无官方预编译）；`EnginePayloadLocator` 逐件诊断（含单测）、`EngineLaunchContract` 启动契约（含单测）、`YZLEngineHost` 运行时桥（dlsym + 契约 + SurfaceVC 运行时呈现）、`LauncherEngineFactory` fork↔外壳自动切换；未编译 |
+| **M2-b fork 补丁与引擎 CI** | 已实现：三处补丁（PojavLauncher YZL 分支 / 二进制名解耦 / UI 注入点）+ 幂等应用脚本 + `engine/fork-patches/yzl/YZLGameEntry.java`；实验流水线 `build-engine-ipa.yml`（workflow_dispatch，托管 runner 实测审计 §10 待验证项）；未实跑 |
 | Windows 自签（备用，当前不采用） | 脚本与 entitlement 模板已实现，未用真实证书实跑 |
 
 > 表里的「未编译」指**修复后的整包代码还没在 macOS 上重新编过一次**；09:20 那次云构建已成功生成 Xcode 工程，并编过除 `AvatarView.swift` 以外的全部文件。
@@ -102,6 +111,64 @@ iOS 外壳按安卓已安装版同步：左侧 84pt 图标栏、居中 FCL 式�
 - M2 接缝落地（纯 Swift，可单测）：`LaunchCommand` 固定 argv 顺序并脱敏令牌；`RuntimeLocator` 用真实标记文件判定 JRE/natives；`JITProbe` 用 RWX 页探测且可注入；`AmethystEngine` 把「运行时 → JIT → 命令 → 桥」串成一条链，`EngineBridge` 未注入时明确抛 `.notIntegrated`。启动面板新增「启动命令」检查项，能看到已生成的参数数量（不含令牌）。
 - 仍缺：JRE 二进制、Amethyst 内核、`JLI_Launch` / `SurfaceViewController` 桥接，以及修复后代码的一次真实编译与 IPA。
 
+### 2026-11-05 晚：Fabric 加载器安装链路（对照 Android / Windows 端补齐）
+
+Android 端（DownloadScreen 选 Fabric）与 Windows 端（CmlLib 加载器下拉）都支持加载器版本，iOS 端此前完全缺失，且存在两处硬伤：
+
+1. `VersionDetail.downloads` 是非可选字段——Fabric profile（`inheritsFrom` 指向原版、没有 `downloads` 键）**在解码阶段就会失败**；
+2. `VersionMergerTests` 一直在用可选 `downloads` 构造 `VersionDetail`，测试目标存在从未被编译到的潜在编译错误（CI 里应用目标先挂，测试目标从未参与编译）。
+
+本次改动：
+
+- **模型**：`downloads` 改为可选，`clientArtifact` 随之可选；`Library` 增加顶层 `sha1` / `size`（Fabric Meta 格式）与 `time` / `releaseTime`（安装记录用）。
+- **Maven 坐标库**：新增 `Core/Minecraft/MavenCoordinates.swift`——加载器 profile 的库只有 `name`（`group:artifact:version[:classifier]`）+ `url`（仓库根），按 Maven 布局推导 jar 路径与下载地址；`InstallPlanner` 与 `LaunchPlanBuilder.classpath` 共用同一解析，保证「装了什么就进 classpath 什么」。
+- **继承链解析**：新增 `Core/Minecraft/VersionInheritanceResolver.swift`——递归解析 `inheritsFrom`（本地已装优先，否则按 Mojang 清单取回），逐层落盘祖先版本 JSON，再交给 `VersionMerger` 拍平存为本版本 JSON；带环检测与深度上限。README 里挂了许久的「安装期拍平存盘待接入」至此落地，安装与启动都不再依赖网络。
+- **Fabric 服务与 UI**：新增 `Core/Minecraft/FabricLoaderService.swift`（`meta.fabricmc.net` 加载器列表 + profile）与 `Features/Versions/FabricInstallCardView.swift`（版本详情页内选加载器版本 → 拉取 profile → 复用原版安装卡的状态机）。`InstallCardView` 参数化标题/说明，`VersionDetailViewModel` 支持预注入详情与本地优先加载。
+- **版本页**：已安装但不在 Mojang 清单里的版本（如 `fabric-loader-0.16.14-1.20.1`）合并进列表并可选中启动，带 Fabric/Forge/Quilt/NeoForge 徽章（`MinecraftVersion.loaderLabel`）。
+- **测试**：新增 `Tests/LoaderInstallTests.swift`（profile 解码、Maven 推导、拍平安装清单字节核对 82,087,576、继承链顺序/缺父/环/深度、JSON 往返、classpath 一致性）与真实裁剪样本 `Tests/Fixtures/FabricProfile_1.20.1.sample.json`；`preflight.py` 全绿（69 Swift / 10 JSON）。
+
+Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（Android 端同样未支持 Forge）。
+
+### 2026-11-06：BMCLAPI 镜像 + Quilt 加载器 + 离线皮肤导入
+
+对照 Android / Windows 端补齐的又一批能力：
+
+- **下载源切换**：新增 `Core/Download/MirrorPolicy.swift`（`DownloadSource` 官方 / BMCLAPI）。映射表与 Android 端 `net/Mirrors.kt` 完全一致：piston-meta / piston-data / launchermeta / launcher → `bmclapi2.bangbang93.com`，`resources.download.minecraft.net` → `/assets/`，`libraries.minecraft.net` 与各 maven → `/maven/`，`meta.fabricmc.net` → `/fabric-meta/`，`meta.quiltmc.org` → `/quilt-meta/`。生效范围：版本清单、版本详情（含加载器 profile）、加载器列表、安装 spec（客户端 jar / 依赖库 / 资源对象）——全部单点改写。设置页新增「下载源」分段选择。镜像端点已实测：清单 200（278,772 字节，与官方一致）、真实资源对象 200（9,101 字节，与 README 2026-11-04 的记录一致）、fabric-meta 列表 200。
+- **Quilt 加载器**：`FabricLoaderService` 泛化为 `LoaderService` + `LoaderKind`（fabric v2 / quilt v3）。Quilt 列表条目没有 `stable` 字段，`LoaderEntry.isStable` 用「版本号含 beta 即非稳定」兜底；profile 端点同构，直接复用继承链解析与安装链路。安装卡升级为「Fabric / Quilt」双分段。
+- **离线皮肤本地导入**：新增 `Core/Auth/LocalSkinStore.swift`——PHPicker 相册选图 → 尺寸校验（64×32 / 64×64 / 128×64 / 128×128，与 Android 端规则一致）→ PNG 存 `Documents/YZLSkins/<账号 id>.png` → `skinURL` 写 `yzl-local-skin://<id>.png?v=<时间戳>`（时间戳保证重复导入时 UI 重新取图）。`AvatarView` / `SkinBodyView` 识别该 scheme 走本地文件；皮肤页离线账号显示「导入 / 恢复默认」卡，微软账号补 minecraft.net 官方皮肤设置入口（对照 Android 端的三源皮肤策略）。
+- **测试**：新增 `Tests/MirrorPolicyTests.swift`（官方原样、13 条镜像映射、未知 host 不动、非法值回退官方、Fabric/Quilt 条目解码、Meta URL、皮肤尺寸校验与存取往返）。
+
+### 2026-11-06（二）：M2-b 定案——fork-overlay 架构与桥接层落地
+
+「把引擎塞进 YZL 工程」的路线经源码级验证**不可行**（三条硬证据见
+`docs/M2B-ENGINE.md` §2：原生桥符号焊在 Amethyst 主二进制里、Java 侧
+自持进程内启动链、上游无预编译产物）。定案走 **fork + UI framework 注入**：
+
+- **架构文档**：`docs/M2B-ENGINE.md`——分层契约图、启动链路、执行手册（三阶段）、风险表。
+- **YZL 侧桥（全部可编译、带单测）**：
+  - `EnginePayloadLocator`：扫描 bundle 里 java_runtimes / Frameworks / libs / cacio 四类引擎件，启动面板从一句"未接入"变成逐件诊断；
+  - `EngineLaunchContract`：`YZL_LAUNCH_PLAN.json` 契约（mainClass / classpath / gameArgs / 账号），令牌只落沙箱、交接即删；
+  - `YZLEngineHost`：dlsym("launchJVM") + 契约写入 + `SurfaceViewController` 运行时呈现——**编译期零依赖 Amethyst 源码**，纯外壳构建全绿；
+  - `LauncherEngineFactory`：fork 环境（符号命中）自动切真引擎桥，外壳构建维持 M2 接缝。
+- **fork 侧补丁（本仓库内备好，幂等脚本一键应用）**：
+  - `PojavLauncher.launchMinecraft` 顶部加 YZL 分支 → `YZLGameEntry.launch(plan)`（PojavClassLoader + 反射 main，进程内进游戏）；
+  - `GLFW.java` / `UIKit.java` 的 `System.load(BUNDLE_PATH + 固定二进制名)` 改为 env 可覆盖；
+  - 根视图装配处 dlopen `YZLUI.framework`，命中即 YZL UI 接管，未命中回退原生 UI。
+- **引擎基线 CI**：`.github/workflows/build-engine-ipa.yml`（workflow_dispatch）+ `engine/build-engine.sh`——在 GitHub 托管 macOS runner 上实测审计 §10 悬而未决的「cmake + JDK8 + ldid 能否构建 make package」，失败日志即产出。
+- preflight 扩展 `engine/**/*.sh` 语法检查（本机无 bash 由 CI 执行）。
+
+**M2-b 剩余动作**（全部在云端/Mac，本机无 Xcode 的物理边界）：
+1. 触发引擎基线流水线，验证托管 runner 工具链；
+2. fork 上 `make payload` → 注入 `YZLUI.framework` → 真机联调
+   （JIT/内存按既有 DEPLOYMENT-MATRIX 分流）。
+   （YZLUI framework target 已于 2026-11-06 补齐：`project.yml` 的 `YZLUI`
+   target + `YZLUI/YZLUIRootController.swift`；图标走 `YZLTheme.icon`
+   的 framework bundle 解析，独立 App 行为不变。）
+
+### 下载管线端到端实测（2026-11-06，真实 Mojang 服务器）
+
+与 iOS 安装器同逻辑的 PowerShell 复刻测试全绿：清单 922 版本 → 1.20.1/1.12.2 详情 → 规则过滤 43/33 条 iOS 适用库（与 11-04 核对值一致）→ 客户端 jar Range 分片下载 23,028,853 字节 + SHA-1 `0c3ec587…` 精确匹配（20.1 MB/s）→ 资源索引 3,598 条 SHA-1 匹配 → 资源对象/依赖库抽样全部哈希吻合。下载、校验、清单语义三层全通。
+
 ## 目录结构
 
 ```
@@ -127,7 +194,10 @@ YZL-Launcher-iOS/
 │   │   └── System/                 设备诊断信息
 │   └── Resources/Assets.xcassets   AppIcon、品牌图标、方块图标
 ├── Tests/                          分片规划、Range 探测、版本 JSON、续传、设备代码模型、
-│                                   LaunchCommand / RuntimeLocator / JIT / 引擎接缝
+│                                   LaunchCommand / RuntimeLocator / JIT / 引擎接缝 / 引擎契约
+├── YZLUI/                          M2-b fork 注入外壳的入口（YZLUIRootController，
+│                                   project.yml 的 YZLUI framework target 使用）
+├── engine/                         M2-b：fork 补丁、幂等应用脚本、引擎基线构建脚本
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── BUILD-AND-SIDELOAD.md
@@ -222,7 +292,8 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 
 - **M0（已完成）** 工程骨架、界面、版本清单、构建与侧载文档
 - **M1（代码完成，待编译）** 微软登录、版本安装、分片断点续传下载器、安装记录、启动自检与 LaunchPlan
-- **M2（接缝完成，二进制未接）** LaunchCommand / RuntimeLocator / JITProbe / AmethystEngine + EngineBridge 已实现并带单测；JRE 二进制、Amethyst 内核、`JLI_Launch` 与 `SurfaceViewController` 桥接仍待 macOS / CMake 侧完成，之后才能真机进主菜单
+- **M2（接缝完成）** LaunchCommand / RuntimeLocator / JITProbe / AmethystEngine + EngineBridge 已实现并带单测
+- **M2-b（✅ 完成，2026-11-06）** fork-overlay 路线全链路打通：Amethyst fork + YZL UI framework 注入 + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 新 Xcode 兼容补丁，CI 十轮迭代后 **success**。成品 `YZL-engine.tipa` 104.7 MB：引擎 + 20 图形 dylib + 6 Java 桥 jar + **JRE 8/17/21/25 全套（186 文件，rt.jar 63 MB、modules 77 MB、libjvm 16 MB）** + YZLUI.framework。YZL 外壳 76 个 Swift 文件在真实 Xcode 26 上编译全绿。**唯一缺口**：JRE 二进制来自 Pojav iOS v2.2 提取（jre8 确认；原 CDN assets.angelauramc.dev 已死，Wayback 无快照）——上线前建议向 Amethyst 社区索取最新版 JRE 包替换。
 - **M3（未开始）** 模组 / 整合包、三源聚合、联机能力
 
 ## 合规

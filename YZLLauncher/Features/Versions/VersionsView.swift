@@ -31,10 +31,10 @@ struct VersionsView: View {
         .task {
             await viewModel.loadIfNeeded()
             if let pending = appState.pendingInstallVersionID,
-               let match = viewModel.versions.first(where: { $0.id == pending }) {
+               let match = listedVersions.first(where: { $0.id == pending }) {
                 selectedVersion = match
             } else if selectedVersion == nil {
-                selectedVersion = appState.selectedVersion ?? viewModel.filtered.first
+                selectedVersion = appState.selectedVersion ?? listedVersions.first
             }
         }
     }
@@ -118,11 +118,23 @@ struct VersionsView: View {
         .padding(.bottom, 6)
     }
 
+    /// 清单版本 + 本地已安装但不在清单里的版本（Fabric / Forge 等加载器 profile）。
+    /// 加载器版本装完后在版本页可见、可选、可启动。
+    private var listedVersions: [MinecraftVersion] {
+        var result = viewModel.filtered
+        let listed = Set(result.map(\.id))
+        let extras = appState.installedVersions
+            .filter { !listed.contains($0.id) }
+            .map(\.minecraftVersion)
+        result.append(contentsOf: extras)
+        return result
+    }
+
     private var searched: [MinecraftVersion] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return viewModel.filtered }
+        guard !trimmed.isEmpty else { return listedVersions }
         let needle = trimmed.lowercased()
-        return viewModel.filtered.filter { version in
+        return listedVersions.filter { version in
             version.id.lowercased().contains(needle)
                 || version.typeLabel.lowercased().contains(needle)
                 || version.releaseDateText.lowercased().contains(needle)
@@ -258,7 +270,7 @@ private struct VersionRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            Image(version.type == "release" ? "GrassBlock" : "CommandBlock")
+            YZLTheme.icon(version.type == "release" ? "GrassBlock" : "CommandBlock")
                 .resizable()
                 .interpolation(.none)
                 .frame(width: 32, height: 32)
@@ -268,6 +280,9 @@ private struct VersionRow: View {
                     Text(version.id)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(isSelected ? YZLTheme.accentText : YZLTheme.text)
+                    if let loader = version.loaderLabel {
+                        StatusBadge(text: loader, tone: .neutral)
+                    }
                     if isCurrent {
                         StatusBadge(text: "当前", tone: isInstalled ? .success : .warning)
                     } else if isInstalled {
@@ -321,6 +336,9 @@ private struct VersionDetailPane: View {
                         totalBytes: bytes
                     )
                 }
+                if isVanillaVersion {
+                    FabricInstallCardView(baseVersion: version, queue: installQueue)
+                }
                 downloadCard
                 infoCard
                 noteCard
@@ -358,7 +376,7 @@ private struct VersionDetailPane: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image(version.type == "release" ? "GrassBlock" : "CommandBlock")
+            YZLTheme.icon(version.type == "release" ? "GrassBlock" : "CommandBlock")
                 .resizable()
                 .interpolation(.none)
                 .frame(width: 44, height: 44)
@@ -413,6 +431,13 @@ private struct VersionDetailPane: View {
         }
     }
 
+    /// 只有 Mojang 官方版本（从清单选中的）才显示 Fabric 加载器卡；
+    /// 加载器 profile 自身（如 fabric-loader-x.y.z-1.20.1）不再叠加安装卡。
+    private var isVanillaVersion: Bool {
+        version.loaderLabel == nil
+            && ["release", "snapshot", "old_beta", "old_alpha"].contains(version.type)
+    }
+
     private var infoCard: some View {
         YZLCard(padding: 12) {
             VStack(spacing: 8) {
@@ -427,7 +452,7 @@ private struct VersionDetailPane: View {
 
     @ViewBuilder
     private var downloadCard: some View {
-        if let detail = model.detail {
+        if let detail = model.detail, let client = detail.clientArtifact {
             YZLCard(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("客户端 jar（单独下载）")
@@ -439,9 +464,9 @@ private struct VersionDetailPane: View {
                         .foregroundStyle(YZLTheme.muted)
                         .lineSpacing(2)
 
-                    infoRow("大小", formatBytes(detail.clientArtifact.size))
+                    infoRow("大小", formatBytes(client.size))
                     infoRow("Java", detail.javaRequirement)
-                    infoRow("SHA-1", detail.clientArtifact.sha1)
+                    infoRow("SHA-1", client.sha1)
 
                     Divider()
 

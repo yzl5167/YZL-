@@ -22,7 +22,9 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.22), value: appState.overlay)
             .animation(.easeInOut(duration: 0.18), value: appState.selectedTab)
         }
-        .background(YZLTheme.page)
+        // 只让背景延伸到屏幕边缘；HStack 的内容仍留在安全区内，
+        // 避免横屏下刘海侧的图标被遮住。
+        .background(YZLTheme.page.ignoresSafeArea())
         .preferredColorScheme(.light)
         .sheet(isPresented: $appState.isLaunchSheetVisible, onDismiss: {
             if appState.launchPhase != .running {
@@ -118,7 +120,9 @@ private struct YZLSidebar: View {
         }
         .frame(width: 84)
         .frame(maxHeight: .infinity)
-        .background(Color.white.ignoresSafeArea(edges: [.top, .bottom]))
+        // 固定横屏时 safe area 主要落在 leading/trailing（刘海侧）与 bottom，
+        // 只忽略 top/bottom 会让白色侧栏铺不到左右边缘，露出一条底色。
+        .background(Color.white.ignoresSafeArea())
     }
 
     private var brand: some View {

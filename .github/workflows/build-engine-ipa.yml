@@ -1,0 +1,241 @@
+name: Engine baseline (M2-b experiment)
+
+# M2-b：在 GitHub 托管 macOS runner 上从 Amethyst 上游源码构建引擎，
+# 实测 docs/POJAV-ENGINE-AUDIT.md §10 的两个待验证项：
+#   1. 托管 runner 能否装齐 cmake / ldid / JDK8 并跑通 make payload；
+#   2. 产物能否带 java_runtimes + Frameworks 全套 payload。
+# 第二阶段接线：构建 YZLUI.framework 并注入 payload（fork 补丁③的
+# 根视图 dlopen 未应用时，框架只是不被加载，无害）。
+# 设计与执行手册见 docs/M2B-ENGINE.md。
+
+on:
+  workflow_dispatch:
+    inputs:
+      amethyst_ref:
+        description: 'Amethyst pin（分支名 / SHA / tag）'
+        required: false
+        default: 'main'
+
+jobs:
+  build-engine:
+    # 上游 Amethyst main 已使用 iOS 26 SDK 专属 API（如 UIBarButtonItem.sharesBackground，
+    # Xcode 26 才有），macos-15 的 Xcode 16.4 编不过——用 macos-26 镜像（自带 Xcode 26）
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Amethyst
+        run: |
+          # MobileGlues 等是 git 子模块，必须一并拉取，否则 CMake 报源目录不存在
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/AngelAuraMC/Amethyst-iOS.git amethyst
+          cd amethyst
+          if [ -n "${{ inputs.amethyst_ref }}" ] && [ "${{ inputs.amethyst_ref }}" != "main" ]; then
+            git fetch --depth 1 origin "${{ inputs.amethyst_ref }}" || true
+            git checkout "${{ inputs.amethyst_ref }}" || echo "WARN: checkout 失败，使用 main"
+          fi
+          git rev-parse HEAD | tee ../amethyst-commit.txt
+
+      - name: Install toolchain
+        run: |
+          brew install cmake ldid coreutils xcodegen || brew upgrade cmake ldid coreutils xcodegen
+
+      - uses: actions/setup-java@v5
+        with:
+          # Temurin 没有 macOS ARM64 的 JDK 8（macos-15 是 M1），用 Azul Zulu
+          distribution: zulu
+          java-version: '8'
+
+      - name: Apply YZL fork patches (best effort)
+        run: |
+          bash engine/apply-fork-patches.sh "$GITHUB_WORKSPACE/amethyst" || \
+            echo "::warning::补丁应用失败，基线按未打补丁构建"
+
+      # 先产 UI framework（不依赖引擎）。-target 式构建产物默认在项目内 build/，
+      # 显式 -derivedDataPath 让产物路径可预测。
+      - name: Build YZLUI framework
+        id: yzlui
+        continue-on-error: true
+        run: |
+          xcodegen generate
+          xcodebuild -project YZLLauncher.xcodeproj -target YZLUI -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            SYMROOT="$GITHUB_WORKSPACE/yzlui-sym" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee yzlui-build.log
+          FW="$GITHUB_WORKSPACE/yzlui-sym/Release-iphoneos/YZLUI.framework"
+          if [ ! -d "$FW" ]; then echo "::warning::YZLUI.framework 未找到"; exit 1; fi
+          echo "framework=$FW" >> "$GITHUB_OUTPUT"
+
+      # RUNNER=1 时 Amethyst 的 METHOD_JAVA_UNPACK 有意跳过下载（依赖预置压缩包）。
+      # 原 CDN assets.angelauramc.dev 已死（动态 DNS 别名失效，2026-11-06 实测），
+      # 改从 Wayback Machine 逐版本探测下载；缺失版本放空 tar.xz 兜底
+      # （保证 payload 必出包，JRE 缺口由启动面板如实暴露，后续可经
+      #   fork 的 JRE 管理界面手动导入 tar.xz）。
+      - name: Pre-stage JRE archives (wayback + Pojav + fallback)
+        working-directory: amethyst
+        run: |
+          mkdir -p depends && cd depends
+          for v in 8 17; do
+            name="jre${v}-ios-aarch64"
+            snap=$(curl -fsSL --max-time 30 "http://archive.org/wayback/available?url=assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);c=d.get("archived_snapshots",{}).get("closest",{});print(c.get("timestamp",""))' 2>/dev/null || true)
+            if [ -n "$snap" ]; then
+              echo "jre$v: wayback snapshot $snap, downloading..."
+              if curl -fL --retry 3 --max-time 900 "https://web.archive.org/web/${snap}id_/https://assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" -o "${name}.zip"; then
+                unzip -oq "${name}.zip" || true
+                rm -f "${name}.zip"
+                if ! ls jre${v}-*.tar.xz >/dev/null 2>&1; then
+                  if [ -d "${name}" ]; then tar cfJ "${name}.tar.xz" "${name}";
+                  elif [ -d "java-${v}-openjdk" ]; then tar cfJ "${name}.tar.xz" "java-${v}-openjdk"; fi
+                fi
+                echo "jre$v: wayback OK"
+              else
+                echo "jre$v: wayback download FAILED"
+              fi
+            else
+              echo "jre$v: no wayback snapshot"
+            fi
+          done
+
+          # 来源 C（实验性，默认关闭）：Zulu macOS aarch64 → iOS 平台改写。
+          # 第十二/十三轮的「无法安装」疑似与改写后的 dylib 有关，先回退定位。
+          # 需要时用 workflow_dispatch inputs 传 zulu_jre=1 启用。
+          if [ "${{ inputs.zulu_jre }}" = "1" ]; then
+          for v in 21 25; do
+            if [ -f "java-${v}-openjdk/release" ]; then continue; fi
+            echo "source C: Zulu macOS aarch64 JRE $v -> iOS platform flip"
+            url=$(curl -fsSL --max-time 30 "https://api.azul.com/metadata/v1/zulu/packages/?java_version=${v}&os=macos&arch=aarch64&java_package_type=jre&release_status=ga&availability_types=CA" \
+              | python3 -c 'import sys,json;ps=[p for p in json.load(sys.stdin) if "fx" not in p["name"].lower()];print(ps[0]["download_url"] if ps else "")' 2>/dev/null || true)
+            if [ -z "$url" ]; then echo "  zulu lookup failed for $v"; continue; fi
+            echo "  $url"
+            if curl -fL --retry 3 --max-time 900 "$url" -o zulu.zip; then
+              unzip -oq zulu.zip -d zulu-x && rm zulu.zip
+              root=$(dirname "$(find zulu-x -type f -name release | head -1)")
+              echo "  JDK root: $root"
+              find "$root" -type f | while read -r f; do
+                if file "$f" | grep -q 'Mach-O'; then
+                  vtool -arch arm64 -set-build-version ios 14.0 16.0 -replace -output "$f" "$f" || true
+                  ldid -S "$f" || true
+                fi
+              done
+              rm -rf "java-${v}-openjdk"
+              cp -R "$root" "java-${v}-openjdk"
+              echo "jre$v: zulu mac->ios converted ($(du -sh "java-${v}-openjdk" | cut -f1))"
+              rm -rf zulu-x
+            else
+              echo "  zulu download FAILED for $v"
+            fi
+          done
+          fi
+
+          # 来源 B：PojavLauncher iOS v2.2（GitHub 活源，103 MB）——解出内置
+          # java_runtimes，按版本重排进 depends/java-N-openjdk。放有 release
+          # 标记文件的目录会被 METHOD_JAVA_UNPACK 整体跳过，故只放目录。
+          if [ ! -f java-8-openjdk/release ]; then
+            echo "source B: extracting JREs from PojavLauncher iOS v2.2..."
+            curl -fL --retry 3 --max-time 900 \
+              "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
+              -o pojav22.ipa || echo "pojav download FAILED"
+            if [ -f pojav22.ipa ]; then
+              unzip -oq pojav22.ipa -d pojav-x || true
+              rm -f pojav22.ipa
+              for jli in $(find pojav-x -type f -name libjli.dylib); do
+                libdir=$(dirname "$jli")
+                if [ "$(basename "$libdir")" = "jli" ]; then
+                  root=$(dirname "$libdir"); major=8
+                else
+                  root=$(dirname "$libdir")
+                  major=$(python3 -c "import re,os,sys; p=os.path.join(sys.argv[1],'release'); rel=(open(p,encoding='utf-8',errors='ignore').read() if os.path.isfile(p) else ''); m=re.search(r'JAVA_VERSION=\"([0-9.]+)', rel); v=(m.group(1) if m else '17'); v=(v.split('.')[1] if v.startswith('1.') else v); print(v.split('.')[0])" "$root")
+                fi
+                case "$major" in
+                  8|17|21|25)
+                    if [ ! -f "java-${major}-openjdk/release" ]; then
+                      rm -rf "java-${major}-openjdk"
+                      cp -R "$root" "java-${major}-openjdk"
+                      echo "jre$major: extracted from Pojav ipa ($(du -sh "java-${major}-openjdk" | cut -f1))"
+                    fi ;;
+                esac
+              done
+              rm -rf pojav-x
+            fi
+          fi
+
+          # 兜底：仍缺席的版本放空 tar.xz（保证出包，缺口由启动面板标红）
+          for v in 8 17 21 25; do
+            if ! ls jre${v}-*.tar.xz >/dev/null 2>&1 && [ ! -f "java-${v}-openjdk/release" ]; then
+              echo "jre$v: EMPTY FALLBACK tar.xz（该运行时缺席，可后续经 JRE 管理界面导入）"
+              tar cfJ "jre${v}-ios-aarch64.tar.xz" -T /dev/null
+            fi
+          done
+          ls -la
+
+      # payload 目标组装 app 并签名，但不打 ipa zip——注入框架后我们自行打包。
+      - name: Build engine payload (make payload)
+        working-directory: amethyst
+        run: |
+          set -o pipefail
+          # Amethyst 的 Makefile 用 /usr/libexec/java_home -v 1.8 找 BOOTJDK，
+          # setup-java 装的 JDK 不在 java_home 注册表里——显式传 BOOTJDK 覆盖。
+          make -j"$(sysctl -n hw.ncpu)" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
+            BOOTJDK="$JAVA_HOME/bin" \
+            2>&1 | tee engine-build.log
+
+      - name: Rebrand payload (YZL name + icon + bundle id)
+        run: |
+          APP=$(find amethyst/artifacts -type d -name "AngelAuraAmethyst.app" | head -1)
+          if [ -z "$APP" ]; then echo "::warning::未找到 app，跳过品牌重写"; exit 0; fi
+          PLIST="$APP/Info.plist"
+          plutil -replace CFBundleDisplayName -string "YZL Launcher" "$PLIST"
+          plutil -replace CFBundleName -string "YZL" "$PLIST"
+          # Bundle ID 保持上游原值（第十三轮改 id 后出现无法安装，先回退排除；
+          # Bundle ID 对用户不可见）
+          # 图标：仓库里的 YZL 1024 图标缩放出各尺寸 PNG，走 Info.plist 传统图标机制
+          ICON_SRC="$GITHUB_WORKSPACE/YZLLauncher/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+          if [ -f "$ICON_SRC" ]; then
+            sips -z 120 120 "$ICON_SRC" --out "$APP/AppIcon60x60@2x.png" >/dev/null
+            sips -z 180 180 "$ICON_SRC" --out "$APP/AppIcon60x60@3x.png" >/dev/null
+            sips -z 152 152 "$ICON_SRC" --out "$APP/AppIcon76x76@2x~ipad.png" >/dev/null
+            sips -z 167 167 "$ICON_SRC" --out "$APP/AppIcon83.5x83.5@2x~ipad.png" >/dev/null
+            plutil -replace CFBundleIcons -json '{"CFBundlePrimaryIcon":{"CFBundleIconFiles":["AppIcon60x60@2x","AppIcon60x60@3x"],"UIPrerenderedIcons":false}}' "$PLIST"
+            plutil -replace "CFBundleIcons~ipad" -json '{"CFBundlePrimaryIcon":{"CFBundleIconFiles":["AppIcon60x60@2x","AppIcon60x60@3x","AppIcon76x76@2x~ipad","AppIcon83.5x83.5@2x~ipad"],"UIPrerenderedIcons":false}}' "$PLIST"
+          fi
+          # Info.plist 变了，主二进制重新伪签（TrollStore entitlement 保持）
+          ldid -S$GITHUB_WORKSPACE/amethyst/entitlements.trollstore.xml "$APP/AngelAuraAmethyst"
+          echo "rebrand done: $(plutil -extract CFBundleDisplayName raw "$PLIST")"
+
+      - name: Inject YZLUI framework into payload
+        if: steps.yzlui.outputs.framework != ''
+        run: |
+          APP=$(find amethyst/artifacts -type d -name "AngelAuraAmethyst.app" | head -1)
+          if [ -z "$APP" ]; then echo "::warning::未找到 AngelAuraAmethyst.app，跳过注入"; exit 0; fi
+          mkdir -p "$APP/Frameworks"
+          cp -R "${{ steps.yzlui.outputs.framework }}" "$APP/Frameworks/"
+          # 框架二进制补伪签（与 payload 其余部分同一策略）
+          ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI" || echo "::warning::YZLUI 伪签失败（TrollStore 可能拒载）"
+          echo "YZLUI.framework 已注入 $APP/Frameworks"
+
+      - name: Package tipa / ipa
+        run: |
+          mkdir -p dist
+          if [ -d amethyst/artifacts/Payload ]; then
+            cd amethyst/artifacts
+            zip -qry "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" Payload
+            cp "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" "$GITHUB_WORKSPACE/dist/YZL-engine-unsigned.ipa"
+            cd - >/dev/null
+          else
+            echo "::warning::Payload 目录不存在，只有日志可取"
+          fi
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          cp amethyst-commit.txt dist/ 2>/dev/null || true
+          find . -maxdepth 2 -name 'engine-build.log' -exec cp {} dist/ \; || true
+          find . -maxdepth 2 -name 'yzlui-build.log' -exec cp {} dist/ \; || true
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-build-${{ inputs.amethyst_ref || 'main' }}
+          path: dist/
+          if-no-files-found: warn

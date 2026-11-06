@@ -38,5 +38,14 @@ struct YZLLauncherApp: App {
         UINavigationBar.appearance().standardAppearance = nav
         UINavigationBar.appearance().scrollEdgeAppearance = nav
         UINavigationBar.appearance().compactAppearance = nav
+
+        // iOS 15 没有 scrollContentBackground(.hidden)：InsetGroupedListStyle 的
+        // tableView 会保留系统灰底，光靠 listRowBackground 刷白行会留下灰色间隙。
+        // 在 appearance 层统一清掉；iOS 16+ 仍优先用 YZLCompat 的原生 API。
+        if #available(iOS 16.0, *) {
+            // YZLCompat.yzlClearListBackground() 处理。
+        } else {
+            UITableView.appearance().backgroundColor = .clear
+        }
     }
 }

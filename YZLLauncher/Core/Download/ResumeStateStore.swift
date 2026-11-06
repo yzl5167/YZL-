@@ -20,12 +20,24 @@ final class ResumeStateStore {
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }
 
+    /// specID 可能是 Maven 路径（如 `lib-org/ow2/asm/9.8/asm-9.8.jar`），
+    /// 直接拼进文件名会写进未创建的子目录，导致断点状态与分片全部落盘失败。
+    /// 统一安全化并加一段稳定哈希，避免不同路径 sanitize 后碰撞。
+    private func fileKey(_ specID: String) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for byte in specID.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 16777619
+        }
+        return "\(DownloadPaths.sanitize(specID))-\(String(hash, radix: 16))"
+    }
+
     func stateURL(for specID: String) -> URL {
-        directory.appendingPathComponent("state-\(specID).json")
+        directory.appendingPathComponent("state-\(fileKey(specID)).json")
     }
 
     func partURL(for spec: DownloadSpec, segment: DownloadSegment) -> URL {
-        directory.appendingPathComponent("\(spec.id)-\(segment.partName)")
+        directory.appendingPathComponent("\(fileKey(spec.id))-\(segment.partName)")
     }
 
     func load(_ specID: String) -> DownloadState? {
@@ -39,7 +51,7 @@ final class ResumeStateStore {
     }
 
     func clearParts(for specID: String) {
-        let prefix = "\(specID)-seg-"
+        let prefix = "\(fileKey(specID))-seg-"
         guard let items = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
         for item in items where item.hasPrefix(prefix) {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(item))

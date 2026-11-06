@@ -11,7 +11,7 @@ struct AssetIndexDocument: Decodable {
 
 struct AssetIndexService {
     func fetch(indexURL: URL) async throws -> AssetIndexDocument {
-        var request = URLRequest(url: indexURL)
+        var request = URLRequest(url: MirrorPolicy.rewrite(indexURL))
         request.timeoutInterval = 30
         request.setValue("YZLLauncher/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
 

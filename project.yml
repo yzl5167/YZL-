@@ -63,6 +63,26 @@ targets:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/YZLLauncher.app/YZLLauncher"
         BUNDLE_LOADER: "$(TEST_HOST)"
 
+  # M2-b fork 注入外壳：与独立 App 共享 YZLLauncher 源码（排除 @main 入口），
+  # 额外提供 NSClassFromString("YZLUIRootController") 入口。
+  # 独立 App 不依赖本 target；fork 构建时由 CI 产出并拷入 Frameworks/。
+  YZLUI:
+    type: framework
+    platform: iOS
+    sources:
+      - path: YZLLauncher
+        excludes:
+          - "Info.plist"
+          - "App/YZLLauncherApp.swift"
+      - path: YZLUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yzl.launcher.ui
+        PRODUCT_NAME: YZLUI
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+
 schemes:
   YZLLauncher:
     build:

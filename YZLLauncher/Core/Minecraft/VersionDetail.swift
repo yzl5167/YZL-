@@ -58,6 +58,28 @@ struct VersionDetail: Codable {
         let url: URL?
         let rules: [Rule]?
         let downloads: DownloadInfo?
+        /// Fabric / Forge 等加载器 profile 用 Maven 坐标（`name` + `url` 仓库根）描述库，
+        /// 哈希与大小直接放在库对象顶层，而不是 Mojang 的 `downloads.artifact` 里。
+        var sha1: String?
+        var size: Int64?
+
+        enum CodingKeys: String, CodingKey {
+            case name, url, rules, downloads, sha1, size
+        }
+
+        init(name: String,
+             url: URL?,
+             rules: [Rule]? = nil,
+             downloads: DownloadInfo? = nil,
+             sha1: String? = nil,
+             size: Int64? = nil) {
+            self.name = name
+            self.url = url
+            self.rules = rules
+            self.downloads = downloads
+            self.sha1 = sha1
+            self.size = size
+        }
     }
 
     struct AssetIndexRef: Codable {
@@ -70,13 +92,20 @@ struct VersionDetail: Codable {
 
     let id: String
     let type: String
-    let downloads: Downloads
+    /// Mojang 官方版本必有 `downloads`；Fabric / Forge 等继承类 profile 没有这个键，
+    /// 客户端 jar 等信息由父版本（`inheritsFrom`）提供，因此必须是可选。
+    let downloads: Downloads?
     let javaVersion: JavaVersion?
     let mainClass: String?
     let libraries: [Library]?
     let assetIndex: AssetIndexRef?
     /// 1.6 之后的版本 JSON 顶层都带 `assets`，值就是资源索引名（常见为 "5"）。
     let assets: String?
+
+    /// ISO 8601 时间串，Mojang 官方与 Fabric profile 都有；仅用于展示与安装记录。
+    /// 带默认值，既有的构造点（VersionMerger / 测试）不需要跟着改。
+    var time: String? = nil
+    var releaseTime: String? = nil
 
     /// 部分版本（如 Forge / Fabric / Quilt 的版本 JSON）通过 `inheritsFrom` 继承某个父版本，
     /// 自身只描述差异。启动时由 `VersionMerger` 递归拍平成一个自包含的完整版本。
@@ -113,9 +142,49 @@ struct VersionDetail: Codable {
             }
         }
 
+        /// Mojang 1.13+ 的 ruled token 用 `value`（单数），值可以是单个字符串，
+        /// 也可以是字符串数组。工程早期测试样本用过 `values`，这里一并兼容，
+        /// 但编码时统一输出官方的 `value` 格式。
         private struct RuledPayload: Codable {
             let values: [String]
             let rules: [Library.Rule]?
+
+            enum CodingKeys: String, CodingKey {
+                case value
+                case values
+                case rules
+            }
+
+            init(values: [String], rules: [Library.Rule]?) {
+                self.values = values
+                self.rules = rules
+            }
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                if let single = try? container.decode(String.self, forKey: .value) {
+                    values = [single]
+                } else if let list = try? container.decode([String].self, forKey: .value) {
+                    values = list
+                } else if let legacyList = try? container.decode([String].self, forKey: .values) {
+                    values = legacyList
+                } else if let legacySingle = try? container.decode(String.self, forKey: .values) {
+                    values = [legacySingle]
+                } else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .value,
+                        in: container,
+                        debugDescription: "ruled argument 缺少 value / values"
+                    )
+                }
+                rules = try container.decodeIfPresent([Library.Rule].self, forKey: .rules)
+            }
+
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(values, forKey: .value)
+                try container.encodeIfPresent(rules, forKey: .rules)
+            }
         }
     }
 
@@ -126,8 +195,8 @@ struct VersionDetail: Codable {
         let game: [ArgumentToken]?
     }
 
-    var clientArtifact: Artifact {
-        downloads.client
+    var clientArtifact: Artifact? {
+        downloads?.client
     }
 
     var assetIndexName: String {

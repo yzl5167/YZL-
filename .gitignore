@@ -3,6 +3,7 @@ build/
 build-test/
 DerivedData/
 build-output/
+dist-engine/
 Payload/
 *.ipa
 *.tipa
