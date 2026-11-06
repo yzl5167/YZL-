@@ -104,9 +104,9 @@ classpath / gameArgs 三样 YZL 已解析到位的东西。
 | fork 补丁①②（Java 分支 + 二进制名） | `engine/fork-patches/` + `engine/apply-fork-patches.sh` | ✅ 已实现，含 mach/mach.h 新 Xcode 兼容补丁 |
 | fork 补丁③ Java 侧实现 | `engine/fork-patches/yzl/YZLGameEntry.java` | ✅ 已实现（同包访问 protected classloader），云端编译通过 |
 | fork 补丁③ UI 注入点说明 | `engine/fork-patches/binary-name-and-ui-entry.patch.md` | ✅ 文档级 |
-| **YZLUI framework target（注入外壳）** | `project.yml` 的 `YZLUI` target + `YZLUI/YZLUIRootController.swift` | ✅ **云端编译通过（BUILD SUCCEEDED），并已注入成品 tipa** |
-| 引擎基线 CI（含 UI 构建注入 + 自行打包 tipa） | `.github/workflows/build-engine-ipa.yml` + `engine/build-engine.sh` | ✅ **全链路绿（2026-11-06 run 42145361915），产出 33.5 MB tipa** |
-| JRE 二进制（java_runtimes） | 原分发 CDN `assets.angelauramc.dev` 已死（动态 DNS 失效），Wayback 无快照，上游 openjdk-build 库只有 android 变体 | ⏳ **当前唯一缺口**；tipa 内 java_runtimes 为空壳兜底，可经 fork 自带 JRE 管理界面手动导入 tar.xz |
+| **YZLUI framework target（注入外壳）** | `project.yml` 的 `YZLUI` target + `YZLUI/YZLUIRootController.swift` | ✅ framework target 编译通过；**2026-11-06 修复**：补 `WebKit.framework` 链接（缺它会产出「有资源、无 Mach-O」的空壳），CI 注入后与最终 tipa 两处硬校验 `YZLUI` 二进制 |
+| 引擎基线 CI（含 UI 构建注入 + 自行打包 tipa） | `.github/workflows/build-engine-ipa.yml` + `engine/build-engine.sh` | ✅ 全链路绿（2026-11-06 run `42220940394`），最终 tipa 已含可执行 `Frameworks/YZLUI.framework/YZLUI` |
+| JRE 二进制（java_runtimes） | 打包时从 Pojav iOS v2.2 提取（`jre8` 已确认）；原分发 CDN `assets.angelauramc.dev` 已死 | ✅ 8/17/21/25 已进包；长期建议换成 Amethyst 社区新版 JRE |
 
 ## 5. 执行手册（按顺序）
 
