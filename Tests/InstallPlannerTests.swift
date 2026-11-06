@@ -57,9 +57,11 @@ final class InstallPlannerTests: XCTestCase {
         let plan = InstallPlanner.plan(detail: detail, layout: InstallLayout(versionID: "1.12.2", root: URL(fileURLWithPath: "/tmp/yzl-install-test")))
 
         XCTAssertEqual(plan.count(of: .clientJar), 1)
-        XCTAssertEqual(plan.count(of: .library), 33)
+        // iOS 不在 Mojang 官方三平台内，带 os 规则的库会被过滤，
+        // 1.12.2 实际保留 32 个（比桌面清单少 1 个 11,055 字节的库）。
+        XCTAssertEqual(plan.count(of: .library), 32)
         XCTAssertEqual(plan.count(of: .assetIndex), 1)
-        XCTAssertEqual(plan.totalBytes, 10_180_113 + 40_470_614 + 143_136)
+        XCTAssertEqual(plan.totalBytes, 10_180_113 + 40_459_559 + 143_136)
     }
 
     func testLargeFilesGetConnectionsSmallFilesGetOne() throws {

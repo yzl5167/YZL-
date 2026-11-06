@@ -46,10 +46,19 @@ enum EngineLaunchContract {
         guard !accessToken.isEmpty else {
             throw ContractError.missingAccessToken
         }
+        // 契约里的独立 accessToken 与实际交给游戏的 gameArguments 必须一致，
+        // 否则 Java 侧拿到的仍是旧令牌（离线账号甚至是空值），在线模式会直接失败。
+        var gameArguments = plan.gameArguments
+        if let index = gameArguments.firstIndex(of: "--accessToken"),
+           index + 1 < gameArguments.count {
+            gameArguments[index + 1] = accessToken
+        } else {
+            gameArguments.append(contentsOf: ["--accessToken", accessToken])
+        }
         return LaunchPlanDocument(
             mainClass: plan.mainClass,
             classpath: plan.classpath.map(\.path),
-            gameArguments: plan.gameArguments,
+            gameArguments: gameArguments,
             accountName: plan.accountName,
             accountUUID: plan.uuid,
             accessToken: accessToken,
@@ -70,6 +79,8 @@ enum EngineLaunchContract {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(document)
+        // 写入方自己保证目录存在，调用方不必先手动建目录。
+        try FileManager.default.createDirectory(at: homeDirectory, withIntermediateDirectories: true)
         let url = homeDirectory.appendingPathComponent("yzl-launch-plan.json")
         try data.write(to: url, options: .atomic)
         return url

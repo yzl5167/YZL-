@@ -90,6 +90,12 @@ final class AppState: ObservableObject {
             selectedVersion = latest.minecraftVersion
         }
 
+        // 首次启动把下载源默认设成国内 BMCLAPI 镜像（官方 CDN 直连通常极慢）。
+        // 只在「从未设置过」时写入，用户显式选过（含选回官方）后不再覆盖。
+        if UserDefaults.standard.string(forKey: MirrorPolicy.storageKey) == nil {
+            UserDefaults.standard.set(DownloadSource.mirror.rawValue, forKey: MirrorPolicy.storageKey)
+        }
+
         engineStatus = engine.isAvailable ? .ready(engine.name) : .notInstalled
         detectJavaRuntime()
 

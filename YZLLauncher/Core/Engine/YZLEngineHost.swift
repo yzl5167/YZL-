@@ -156,11 +156,19 @@ struct YZLEngineHost: LauncherEngine {
     /// 契约需要独立令牌值：从游戏参数里取回，避免第二条持久化路径。
     static func accessTokenFromPlan(_ plan: LaunchPlan) -> String {
         let arguments = plan.gameArguments
-        guard let index = arguments.firstIndex(of: "--accessToken"),
-              index + 1 < arguments.count else {
-            return plan.gameArguments.contains("offline") ? "offline" : ""
+        if let index = arguments.firstIndex(of: "--accessToken"),
+           index + 1 < arguments.count {
+            return arguments[index + 1]
         }
-        return arguments[index + 1]
+        // 离线（伪正版）账号没有微软令牌：userType=mojang 时用固定占位值，
+        // 否则契约会因空令牌被拒，离线账号根本起不来。
+        // 旧实现找字面量 "offline"，但命令行里只有 "mojang"，永远命中不了。
+        if let typeIndex = arguments.firstIndex(of: "--userType"),
+           typeIndex + 1 < arguments.count,
+           arguments[typeIndex + 1].lowercased() == "mojang" {
+            return "offline"
+        }
+        return ""
     }
 }
 
