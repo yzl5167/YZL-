@@ -54,18 +54,32 @@ jobs:
 
       # 先产 UI framework（不依赖引擎）。-target 式构建产物默认在项目内 build/，
       # 显式 -derivedDataPath 让产物路径可预测。
+      # 这里必须硬失败：资源目录存在但二进制链接失败时，旧逻辑会继续注入一个
+      # 空壳 YZLUI.framework，最终包里没有 YZL，真机只能看到 Amethyst 原生 UI。
       - name: Build YZLUI framework
         id: yzlui
-        continue-on-error: true
         run: |
+          set -o pipefail
           xcodegen generate
           xcodebuild -project YZLLauncher.xcodeproj -target YZLUI -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             SYMROOT="$GITHUB_WORKSPACE/yzlui-sym" \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee yzlui-build.log
           FW="$GITHUB_WORKSPACE/yzlui-sym/Release-iphoneos/YZLUI.framework"
-          if [ ! -d "$FW" ]; then echo "::warning::YZLUI.framework 未找到"; exit 1; fi
+          if [ ! -d "$FW" ]; then
+            echo "::error::YZLUI.framework 未生成"
+            grep -n "error:" yzlui-build.log | head -40 || true
+            exit 1
+          fi
+          if [ ! -f "$FW/YZLUI" ]; then
+            echo "::error::YZLUI.framework 缺少可执行文件（只有资源，没有 Mach-O）"
+            echo "::error::以下为编译/链接错误摘要"
+            grep -n "error:" yzlui-build.log | head -40 || true
+            ls -la "$FW"
+            exit 1
+          fi
           echo "framework=$FW" >> "$GITHUB_OUTPUT"
+          ls -la "$FW/YZLUI"
 
       # RUNNER=1 时 Amethyst 的 METHOD_JAVA_UNPACK 有意跳过下载（依赖预置压缩包）。
       # 原 CDN assets.angelauramc.dev 已死（动态 DNS 别名失效，2026-11-06 实测），
@@ -206,13 +220,22 @@ jobs:
       - name: Inject YZLUI framework into payload
         if: steps.yzlui.outputs.framework != ''
         run: |
+          set -euo pipefail
           APP=$(find amethyst/artifacts -type d -name "AngelAuraAmethyst.app" | head -1)
-          if [ -z "$APP" ]; then echo "::warning::未找到 AngelAuraAmethyst.app，跳过注入"; exit 0; fi
+          if [ -z "$APP" ]; then echo "::error::未找到 AngelAuraAmethyst.app，无法注入 YZLUI"; exit 1; fi
           mkdir -p "$APP/Frameworks"
+          # 避免旧 framework 目录造成嵌套拷贝 / 空壳残留。
+          rm -rf "$APP/Frameworks/YZLUI.framework"
           cp -R "${{ steps.yzlui.outputs.framework }}" "$APP/Frameworks/"
+          if [ ! -f "$APP/Frameworks/YZLUI.framework/YZLUI" ]; then
+            echo "::error::注入后缺少 YZLUI 可执行文件"
+            find "$APP/Frameworks/YZLUI.framework" -maxdepth 2 -print || true
+            exit 1
+          fi
           # 框架二进制补伪签（与 payload 其余部分同一策略）
-          ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI" || echo "::warning::YZLUI 伪签失败（TrollStore 可能拒载）"
+          ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI"
           echo "YZLUI.framework 已注入 $APP/Frameworks"
+          ls -la "$APP/Frameworks/YZLUI.framework"
 
       - name: Package tipa / ipa
         run: |
@@ -223,18 +246,40 @@ jobs:
             cp "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" "$GITHUB_WORKSPACE/dist/YZL-engine-unsigned.ipa"
             cd - >/dev/null
           else
-            echo "::warning::Payload 目录不存在，只有日志可取"
+            echo "::error::Payload 目录不存在，无法出包"
+            exit 1
+          fi
+
+      - name: Verify YZLUI binary inside final tipa
+        run: |
+          TIPA="$GITHUB_WORKSPACE/dist/YZL-engine.tipa"
+          if unzip -l "$TIPA" | grep -q 'Frameworks/YZLUI.framework/YZLUI$'; then
+            echo "OK: final tipa contains YZLUI.framework/YZLUI"
+          else
+            echo "::error::最终 tipa 缺少 Frameworks/YZLUI.framework/YZLUI"
+            unzip -l "$TIPA" | grep 'YZLUI' || true
+            exit 1
           fi
 
       - name: Collect artifacts
         if: always()
         run: |
+          mkdir -p dist
           cp amethyst-commit.txt dist/ 2>/dev/null || true
           find . -maxdepth 2 -name 'engine-build.log' -exec cp {} dist/ \; || true
           find . -maxdepth 2 -name 'yzlui-build.log' -exec cp {} dist/ \; || true
           ls -la dist/
 
+      - name: Upload YZLUI build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yzlui-build-log
+          path: yzlui-build.log
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: engine-build-${{ inputs.amethyst_ref || 'main' }}
           path: dist/
