@@ -20,20 +20,8 @@ struct VersionManifestService {
     }
 
     private func fetch(url: URL) async throws -> Data {
-        // 下载源设置在这里统一生效（清单与版本详情都走 Mojang 元数据域）。
-        var request = URLRequest(url: MirrorPolicy.rewrite(url))
-        request.timeoutInterval = 20
-        request.setValue("YZLLauncher/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let http = response as? HTTPURLResponse else {
-            throw VersionServiceError.invalidResponse
-        }
-        guard http.statusCode == 200 else {
-            throw VersionServiceError.badStatus(http.statusCode)
-        }
-        return data
+        // 下载源改写 + 双源回退重试，避免一次网络抖动就让版本列表加载失败。
+        try await MetadataFetcher.data(for: url)
     }
 }
 
@@ -41,6 +29,8 @@ enum VersionServiceError: LocalizedError {
     case invalidResponse
     case badStatus(Int)
     case decodingFailed
+    case metadataUnavailable(String)
+    case assetIndexUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -50,6 +40,10 @@ enum VersionServiceError: LocalizedError {
             return "服务器返回 HTTP \(code)"
         case .decodingFailed:
             return "版本清单格式解析失败"
+        case .metadataUnavailable(let reason):
+            return "版本元数据获取失败（已依次尝试官方源与镜像源）：\(reason)。可在「设置 → 下载源」切换后重试。"
+        case .assetIndexUnavailable(let reason):
+            return "资源索引获取失败（已依次尝试官方源与镜像源）：\(reason)。可在「设置 → 下载源」切换后重试。"
         }
     }
 }

@@ -19,6 +19,8 @@ enum AuthPhase: Equatable {
     case idle
     case requestingCode
     case awaitingUser(DeviceCode)
+    /// 默认公共客户端走 v1.0 授权码流，需要在 WebView 里完成微软登录。
+    case browser(URL)
     case exchanging
     case failed(String)
 }
@@ -153,10 +155,22 @@ final class AppState: ObservableObject {
         restoreTask?.cancel()
         restoreTask = nil
         authTask?.cancel()
-        authPhase = .requestingCode
         isAuthSheetVisible = true
 
         let service = MicrosoftAuthService(clientId: MicrosoftAuth.clientId)
+        if service.usesBrowserSignIn {
+            // `00000000402b5328` 是 MSA v1.0 原生客户端，不在 Azure AAD 目录，
+            // 设备码端点虽能发 code，但用户授权后 token 端点会返回
+            // interaction_required。默认客户端必须走 v1.0 授权码 + 网页登录。
+            guard let url = service.authorizationURL else {
+                authPhase = .failed("无法生成微软登录页地址，请检查设置里的客户端 ID。")
+                return
+            }
+            authPhase = .browser(url)
+            return
+        }
+
+        authPhase = .requestingCode
         authTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
             // 记录失败发生在哪一段，否则用户只看到一句「登录失败」无从排查。
@@ -171,23 +185,54 @@ final class AppState: ObservableObject {
 
                 stage = "换取 Xbox / Minecraft 令牌"
                 let session = try await service.makeSession(from: token)
-                self.sessionStore.save(session)
-                self.session = session
-                self.account = session.account
-                self.activeAccountID = session.account.id
-                self.persistActiveAccount()
+                self.applySession(session)
                 self.authPhase = .idle
                 self.isAuthSheetVisible = false
             } catch is CancellationError {
                 self.authPhase = .idle
             } catch {
-                let branch = MicrosoftAuth.clientId.caseInsensitiveCompare(MicrosoftAuth.defaultClientId) == .orderedSame
-                    ? "Live Connect（默认客户端）"
-                    : "Azure v2.0（自定义客户端）"
-                self.authPhase = .failed("\(stage)：\(error.localizedDescription)\n登录分支：\(branch)")
+                self.authPhase = .failed("\(stage)：\(error.localizedDescription)\n登录分支：Azure v2.0（自定义客户端）")
             }
             self.authTask = nil
         }
+    }
+
+    /// WebView 拦到 `oauth20_desktop.srf?code=...` 后进入这里。
+    func completeBrowserSignIn(code: String) {
+        guard !code.isEmpty else { return }
+        authPhase = .exchanging
+        let service = MicrosoftAuthService(clientId: MicrosoftAuth.clientId)
+        authTask?.cancel()
+        authTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            var stage = "换取微软访问令牌"
+            do {
+                let token = try await service.exchangeAuthorizationCode(code)
+                stage = "换取 Xbox / Minecraft 令牌"
+                let session = try await service.makeSession(from: token)
+                try Task.checkCancellation()
+                self.applySession(session)
+                self.authPhase = .idle
+                self.isAuthSheetVisible = false
+            } catch is CancellationError {
+                self.authPhase = .idle
+            } catch {
+                self.authPhase = .failed("\(stage)：\(error.localizedDescription)\n登录分支：Live Connect v1.0（网页授权码）")
+            }
+            self.authTask = nil
+        }
+    }
+
+    func failBrowserSignIn(message: String) {
+        authPhase = .failed("微软网页授权：\(message)\n登录分支：Live Connect v1.0（网页授权码）")
+    }
+
+    private func applySession(_ session: StoredSession) {
+        sessionStore.save(session)
+        self.session = session
+        account = session.account
+        activeAccountID = session.account.id
+        persistActiveAccount()
     }
 
     func cancelSignIn() {

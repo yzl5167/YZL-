@@ -21,6 +21,8 @@ targets:
       - path: YZLLauncher
         excludes:
           - "Info.plist"
+    dependencies:
+      - sdk: WebKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yzl.launcher

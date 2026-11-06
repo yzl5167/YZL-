@@ -55,6 +55,8 @@ enum MicrosoftAuthError: LocalizedError {
     case xbox(String)
     case noProfile
     case expired
+    /// 微软要求重新完成交互式登录（设备码流无法自行重试 /authorize）。
+    case reauthenticationRequired(String)
 
     var errorDescription: String? {
         switch self {
@@ -70,8 +72,16 @@ enum MicrosoftAuthError: LocalizedError {
             return "该微软账户没有 Minecraft: Java Edition 档案（未购买或授权未同步）。没有正版也可以在账号页创建离线（伪正版）账号。"
         case .expired:
             return "登录代码已过期，请重新登录。"
+        case .reauthenticationRequired(let detail):
+            return "微软要求重新完成交互式授权：请关闭本页重新发起登录，并先在浏览器里退出其它微软账号、重新输入密码并同意授权。原始错误：\(detail)"
         }
     }
+}
+
+/// v1.0 授权码流的回调解析结果，抽成纯函数便于单测。
+enum MicrosoftAuthorizationCallback: Equatable {
+    case code(String)
+    case failure(String)
 }
 
 enum MicrosoftAuth {
@@ -102,6 +112,9 @@ struct MicrosoftAuthService {
         return URLSession(configuration: configuration)
     }()
 
+    /// 该公共客户端在微软侧登记的固定回调地址，WebView 拦截后不真正加载。
+    static let redirectURI = "https://login.live.com/oauth20_desktop.srf"
+
     let clientId: String
     var session: URLSession = MicrosoftAuthService.defaultSession
 
@@ -109,6 +122,10 @@ struct MicrosoftAuthService {
     private var usesLiveConnect: Bool {
         clientId.caseInsensitiveCompare(MicrosoftAuth.defaultClientId) == .orderedSame
     }
+
+    /// 默认客户端是 MSA v1.0 原生客户端，只支持浏览器授权码流；
+    /// 自定义 Azure 应用才支持 v2.0 设备码流。
+    var usesBrowserSignIn: Bool { usesLiveConnect }
 
     private var scope: String {
         usesLiveConnect ? "service::user.auth.xboxlive.com::MBI_SSL" : "XboxLive.signin offline_access"
@@ -124,6 +141,33 @@ struct MicrosoftAuthService {
         URL(string: usesLiveConnect
             ? "https://login.live.com/oauth20_token.srf"
             : "https://login.microsoftonline.com/consumers/oauth2/v2.0/token")!
+    }
+
+    /// Live Connect v1.0 授权码流登录页。设备码端点虽然也会发 code，但用户授权后
+    /// token 端点会返回 interaction_required（MSA v1.0 客户端不在 AAD 目录），
+    /// 因此默认客户端必须走这里。
+    var authorizationURL: URL? {
+        guard usesLiveConnect else { return nil }
+        var components = URLComponents(string: "https://login.live.com/oauth20_authorize.srf")
+        components?.queryItems = [
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "scope", value: scope),
+            URLQueryItem(name: "redirect_uri", value: Self.redirectURI)
+        ]
+        return components?.url
+    }
+
+    /// 解析 `oauth20_desktop.srf` 回调；非回调地址返回 nil，WebView 照常加载。
+    static func parseAuthorizationCallback(_ url: URL) -> MicrosoftAuthorizationCallback? {
+        guard url.path.lowercased().contains("oauth20_desktop.srf") else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty {
+            return .code(code)
+        }
+        let error = items.first(where: { $0.name == "error" })?.value ?? "授权未完成"
+        let description = items.first(where: { $0.name == "error_description" })?.value
+        return .failure([error, description].compactMap { $0 }.joined(separator: "："))
     }
 
     private static let xboxURL = URL(string: "https://user.auth.xboxlive.com/user/authenticate")!
@@ -182,12 +226,25 @@ struct MicrosoftAuthService {
                 break
             case "slow_down":
                 interval += 5
+            case "temporarily_unavailable", "server_error":
+                // 服务端瞬时故障：继续轮询，别把一次抖动判成登录失败。
+                interval = min(interval + 5, 30)
             case "expired_token", "bad_verification_code":
                 throw MicrosoftAuthError.expired
             case "access_denied", "authorization_declined":
                 throw MicrosoftAuthError.oauth("用户取消了授权")
+            case "interaction_required", "consent_required", "login_required", "invalid_grant":
+                // The user could not be authenticated or user interaction is required…
+                // 设备码流无法自行重试 /authorize，只能给出可操作的中文指引。
+                let raw = [oauthError, body?.errorDescription]
+                    .compactMap { $0 }
+                    .joined(separator: "：")
+                throw MicrosoftAuthError.reauthenticationRequired(raw)
             default:
-                throw MicrosoftAuthError.oauth(body?.errorDescription ?? "HTTP \(response.statusCode)")
+                let raw = [oauthError.isEmpty ? nil : oauthError, body?.errorDescription]
+                    .compactMap { $0 }
+                    .joined(separator: "：")
+                throw MicrosoftAuthError.oauth(raw.isEmpty ? "HTTP \(response.statusCode)" : raw)
             }
 
             try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
@@ -217,6 +274,29 @@ struct MicrosoftAuthService {
         return try decode(OAuthToken.self, from: data)
     }
 
+    /// v1.0 授权码 → 访问令牌。与设备码流共用同一个 token 端点，
+    /// 只是 grant_type 换成 authorization_code，并带上微软登记的 redirect_uri。
+    func exchangeAuthorizationCode(_ code: String) async throws -> OAuthToken {
+        try validateClientId()
+
+        var request = URLRequest(url: tokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = formBody([
+            "client_id": clientId,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": Self.redirectURI,
+            "scope": scope
+        ])
+
+        let (data, response) = try await send(request)
+        guard response.statusCode == 200 else {
+            throw MicrosoftAuthError.oauth(errorMessage(from: data, status: response.statusCode))
+        }
+        return try decode(OAuthToken.self, from: data)
+    }
+
     /// OAuth 访问令牌 → Xbox Live → XSTS → Minecraft 档案。
     func makeSession(from token: OAuthToken) async throws -> StoredSession {
         let xbox = try await authenticateXbox(accessToken: token.accessToken)
@@ -232,18 +312,23 @@ struct MicrosoftAuthService {
         )
     }
 
-    /// Live Connect 的 MSA v1 令牌用 `d=` 前缀；Azure v2.0 的 MSA PT 令牌用 `t=`。
-    /// 自定义客户端先按 v2.0 规范试 `t=`，失败再回退 `d=`，避免硬编码前缀导致登录必败。
+    /// `MBI_SSL` scope 换到的是预成型 RPS ticket，XBL 要求裸传（无前缀）；
+    /// Azure v2.0 `XboxLive.signin` 拿到的是普通 access token，用 `t=`。
+    /// 两条路都保留 `d=` 回退，避免服务端策略差异导致登录必败。
+    func rpsTicketPrefixes() -> [String] {
+        usesLiveConnect ? ["", "d"] : ["t", "d"]
+    }
+
     private func authenticateXbox(accessToken: String) async throws -> XboxToken {
-        let prefixes = usesLiveConnect ? ["d"] : ["t", "d"]
         var lastError: Error?
-        for prefix in prefixes {
+        for prefix in rpsTicketPrefixes() {
+            let ticket = prefix.isEmpty ? accessToken : "\(prefix)=\(accessToken)"
             do {
                 let payload: [String: Any] = [
                     "Properties": [
                         "AuthMethod": "RPS",
                         "SiteName": "user.auth.xboxlive.com",
-                        "RpsTicket": "\(prefix)=\(accessToken)"
+                        "RpsTicket": ticket
                     ],
                     "RelyingParty": "http://auth.xboxlive.com",
                     "TokenType": "JWT"

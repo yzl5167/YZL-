@@ -359,7 +359,7 @@ private struct LoginSheet: View {
                 Text("登录微软账户")
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(YZLTheme.text)
-                Text("设备代码授权 · 不经过第三方服务器")
+                Text("微软官方登录页 · 不经过第三方服务器")
                     .font(.system(size: 10.5))
                     .foregroundStyle(YZLTheme.muted)
             }
@@ -387,6 +387,8 @@ private struct LoginSheet: View {
             centeredProgress("正在向微软请求登录代码…")
         case .awaitingUser(let code):
             codeView(code)
+        case .browser(let url):
+            browserView(url)
         case .exchanging:
             centeredProgress("正在验证 Xbox Live 与 Minecraft 档案…")
         case .failed(let message):
@@ -404,6 +406,38 @@ private struct LoginSheet: View {
                 .foregroundStyle(YZLTheme.muted)
         }
         .padding(40)
+    }
+
+    /// 默认公共客户端：直接在微软官方页面完成登录，回调由 WKWebView 拦截。
+    private func browserView(_ url: URL) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(YZLTheme.accent)
+                Text("在下方微软官方页面登录并同意授权，完成后自动关闭")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(YZLTheme.muted)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(YZLTheme.field)
+
+            MicrosoftBrowserSignInView(
+                url: url,
+                onCode: { appState.completeBrowserSignIn(code: $0) },
+                onFailure: { appState.failBrowserSignIn(message: $0) }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: 560, height: 460)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(YZLTheme.border, lineWidth: 1)
+        )
+        .padding(24)
     }
 
     private func codeView(_ code: DeviceCode) -> some View {

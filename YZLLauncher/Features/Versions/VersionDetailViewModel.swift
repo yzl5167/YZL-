@@ -110,7 +110,13 @@ final class VersionDetailViewModel: ObservableObject {
 
         if let index = workingDetail.assetIndex {
             do {
-                let document = try await assetIndexService.fetch(indexURL: index.url)
+                // 已装过或上次中断时索引就在本地，优先复用；否则自动在
+                // 官方源 / 镜像源之间回退重试，不再因一次网络抖动中止安装。
+                let document = try await assetIndexService.fetch(
+                    indexURL: index.url,
+                    cacheURL: layout.assetIndexURL(id: index.id),
+                    expectedSHA1: index.sha1
+                )
                 let objects = InstallPlanner.assetObjectPlan(
                     document: document,
                     layout: layout,
@@ -120,7 +126,7 @@ final class VersionDetailViewModel: ObservableObject {
                 objectCount = objects.files.count
                 objectBytes = objects.totalBytes
             } catch {
-                errorMessage = "资源索引获取失败：\(error.localizedDescription)"
+                errorMessage = "安装准备失败：\(error.localizedDescription)"
                 return nil
             }
         }

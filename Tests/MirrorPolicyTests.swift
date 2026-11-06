@@ -25,8 +25,6 @@ final class MirrorPolicyTests: XCTestCase {
         let cases: [(String, String)] = [
             ("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
              "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json"),
-            ("https://piston-meta.mojang.com/v1/packages/abc/1.20.1.json",
-             "https://bmclapi2.bangbang93.com/v1/packages/abc/1.20.1.json"),
             ("https://piston-data.mojang.com/v1/objects/abc/client.jar",
              "https://bmclapi2.bangbang93.com/v1/objects/abc/client.jar"),
             ("https://resources.download.minecraft.net/b6/b62ca8ec10d07e6bf5ac8dae0c8c1d2e6a1e3356",
@@ -62,6 +60,23 @@ final class MirrorPolicyTests: XCTestCase {
             MirrorPolicy.rewrite(fabricMaven, source: .mirror).absoluteString,
             "https://bmclapi2.bangbang93.com/maven/net/fabricmc/fabric-loader/0.16.14/fabric-loader-0.16.14.jar"
         )
+    }
+
+    func testAssetIndexPackagesStayOnOfficialHost() throws {
+        // BMCLAPI 不镜像 /v1/packages/（实测 4/4 TLS 断开），
+        // 索引改写到镜像会让每个版本都卡在「资源索引获取失败」。
+        let cases = [
+            "https://piston-meta.mojang.com/v1/packages/abc/1.20.1.json",
+            "https://launchermeta.mojang.com/v1/packages/abc/1.json"
+        ]
+        for raw in cases {
+            let url = try XCTUnwrap(URL(string: raw))
+            XCTAssertEqual(
+                MirrorPolicy.rewrite(url, source: .mirror).absoluteString,
+                raw,
+                raw
+            )
+        }
     }
 
     func testMirrorLeavesUnknownHostsAlone() throws {
