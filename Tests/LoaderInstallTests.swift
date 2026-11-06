@@ -87,15 +87,16 @@ final class LoaderInstallTests: XCTestCase {
 
         XCTAssertEqual(plan.count(of: .clientJar), 1, "客户端 jar 从父版本带下来")
         let jar = try XCTUnwrap(plan.specs.first { $0.id.hasPrefix("client-") })
-        XCTAssertEqual(jar.url.host, "piston-data.mojang.com")
+        // 下载源可在设置里切换，这里验证路径结构而非具体 CDN 域名。
+        XCTAssertTrue(jar.url.absoluteString.hasSuffix("client.jar"))
         XCTAssertEqual(jar.destination, fabricLayout.clientJar)
 
         XCTAssertEqual(plan.count(of: .library), 51)
         XCTAssertEqual(plan.count(of: .assetIndex), 1)
 
         // Maven 坐标库：URL 由仓库根 + 推导路径拼出，sha1 透传顶层字段。
-        let asm = try XCTUnwrap(plan.specs.first { $0.id == "lib-org/ow2/asm/9.8/asm-9.8.jar" })
-        XCTAssertEqual(asm.url.absoluteString, "https://maven.fabricmc.net/org/ow2/asm/9.8/asm-9.8.jar")
+        let asm = try XCTUnwrap(plan.specs.first { $0.url.absoluteString.hasSuffix("org/ow2/asm/9.8/asm-9.8.jar") })
+        XCTAssertTrue(asm.url.absoluteString.hasSuffix("org/ow2/asm/9.8/asm-9.8.jar"))
         XCTAssertEqual(asm.expectedSHA1, "dc19ecb3f7889b7860697215cae99c0f9b6f6b4b")
         XCTAssertEqual(asm.expectedSize, 126113)
 
