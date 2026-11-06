@@ -85,7 +85,9 @@ final class InstallPlannerTests: XCTestCase {
         for file in plan.files {
             let hash = file.spec.expectedSHA1 ?? ""
             let prefix = String(hash.prefix(2))
-            XCTAssertTrue(file.spec.url.absoluteString.hasPrefix("https://resources.download.minecraft.net/" + prefix + "/"))
+            // 官方 CDN 与 BMCLAPI 镜像的末段都是 <前2位>/<hash>；
+            // 这里验证路径结构，不绑死具体域名（下载源可在设置里切换）。
+            XCTAssertTrue(file.spec.url.absoluteString.hasSuffix(prefix + "/" + hash))
             XCTAssertTrue(file.spec.destination.path.hasSuffix("assets/objects/" + prefix + "/" + hash))
             XCTAssertEqual(file.spec.maxConnections, 1)
         }
