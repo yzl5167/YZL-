@@ -7,9 +7,9 @@
 
 > 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。主线交付物是 TrollStore `.tipa`。
 
-当前处于 **M0 工程骨架 + M1 安装/启动准备 + M2 引擎接缝（可测部分）**。界面、Mojang 版本清单、设备代码登录、分片下载器、整包安装、安装记录持久化、启动参数与命令行组装已写入；**JRE 二进制与 Amethyst 内核尚未接入，真正进入游戏仍要等引擎桥实现**。
+当前处于 **M0/M1 完成 + M2 引擎件就位、待真机联调**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、安装记录持久化、启动参数组装都已实现并通过云构建与单测。引擎包已经含 JRE 8/17/21/25、图形 dylib、Java 桥 jar 与 `YZLGameEntry`；**YZL UI 注入件（`YZLUI.framework` 二进制）此前缺失，已修好并在 2026-11-06 的 CI 中硬校验通过，接下来需要真机装包验证进游戏**。
 
-2026-11-05 09:20 的首次云构建暴露了 `AvatarView.swift` 的 3 个 Swift 编译错误，当天已修复，并把 `scripts/preflight.py` 静态自检挂进全部 CI 任务。截至 11-05 中午，**修复后的代码尚未在 macOS 上复跑编译**，仓库里仍没有 IPA。
+2026-11-06 云构建：外壳 `7535b92` 编译成功，单测 **139 个 / 1 跳过 / 0 失败**；引擎流水线 `42220940394` 成功，最终 `.tipa` 已带 `Frameworks/YZLUI.framework/YZLUI`。
 
 ## 为什么只能侧载
 
@@ -34,23 +34,23 @@
 
 | 模块 | 状态 |
 | --- | --- |
-| XcodeGen 工程与资源目录 | 已建立，未编译 |
-| YZL 风格 SwiftUI 外壳（固定横屏、左侧图标栏） | 已实现，未编译 |
-| 安卓同款 FCL 式居中主页（头像 / 版本 / 启动） | 已实现，未编译 |
-| 账号管理页（安卓同款卡片 + 设备代码登录） | 已实现，未编译 |
-| 皮肤页（读取 Mojang 档案皮肤贴图） | 已实现，未编译 |
-| 版本页主从分栏（左列表 + 右详情） | 已实现，未编译 |
-| 微软设备代码登录（Xbox / XSTS / Minecraft + Keychain） | 已实现，未编译联调 |
-| Mojang 版本清单拉取 | 接口结构已用真实响应验证；Swift 侧未编译联调 |
-| 分片下载器 + 客户端 jar / 整包安装 | 已实现，未编译 |
-| 安装清单（规则过滤/依赖库/资源去重）+ 多文件队列 | 已实现，清单数字用真实 Mojang 数据核对，未编译 |
-| 安装记录 `installed.json` + 当前版本持久化 | 已实现，未编译 |
-| 启动自检（账户/文件/令牌/JRE/JIT/内核）+ LaunchPlan 参数生成 | 已实现到引擎边界，未编译 |
+| XcodeGen 工程与资源目录 | 已建立，云构建通过 |
+| YZL 风格 SwiftUI 外壳（固定横屏、左侧图标栏） | 已实现，云构建通过 |
+| 安卓同款 FCL 式居中主页（头像 / 版本 / 启动） | 已实现，云构建通过 |
+| 账号管理页（安卓同款卡片 + 微软登录） | 已实现，云构建通过 |
+| 皮肤页（读取 Mojang 档案皮肤贴图） | 已实现，云构建通过 |
+| 版本页主从分栏（左列表 + 右详情） | 已实现，云构建通过 |
+| 微软登录（默认 v1.0 浏览器授权码流；自定义 Azure 走设备码） | 已实现，含单测；真机登录待联调 |
+| Mojang 版本清单拉取 | 已实现，接口结构与真实响应核对 |
+| 分片下载器 + 客户端 jar / 整包安装 | 已实现，含单测；真实文件哈希核对通过 |
+| 安装清单（规则过滤/依赖库/资源去重）+ 多文件队列 | 已实现，清单数字用真实 Mojang 数据核对 |
+| 安装记录 `installed.json` + 当前版本持久化 | 已实现，云构建通过 |
+| 启动自检（账户/文件/令牌/JRE/JIT/内核）+ LaunchPlan 参数生成 | 已实现，云构建通过 |
 | LaunchCommand（JVM argv 顺序、令牌脱敏、环境变量） | 已实现，含单测 |
 | RuntimeLocator（JRE / natives 真实定位，空目录不算可用） | 已实现，含单测 |
 | JITProbe（RWX 页探测，可注入便于测试） | 已实现，含单测 |
-| AmethystEngine + EngineBridge 协议（M2 接缝） | 已实现，含单测；桥未注入 |
-| JRE 二进制 + Amethyst 内核 + SurfaceViewController | 未开始，需要 macOS / CMake 构建 |
+| AmethystEngine + EngineBridge 协议（M2 接缝） | 已实现，含单测；fork 环境由 YZLEngineHost 接管 |
+| JRE 二进制 + Amethyst 内核 + SurfaceViewController | 已打进引擎 `.tipa`；YZL UI 注入件已修复，待真机进游戏验证 |
 | 上游引擎接缝审计 | 已完成初步审计，见 `docs/POJAV-ENGINE-AUDIT.md` |
 | 静态自检 `scripts/preflight.py`（括号 / JSON / plist / 禁用 API / shell / ps1 BOM） | 已实现并接入全部 CI 任务 |
 | `scripts/fetch-ipa.ps1`（Windows 一键触发构建并取回 IPA） | 已实现，PowerShell 5.1 语法校验通过 |
@@ -157,13 +157,47 @@ Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（An
 - **引擎基线 CI**：`.github/workflows/build-engine-ipa.yml`（workflow_dispatch）+ `engine/build-engine.sh`——在 GitHub 托管 macOS runner 上实测审计 §10 悬而未决的「cmake + JDK8 + ldid 能否构建 make package」，失败日志即产出。
 - preflight 扩展 `engine/**/*.sh` 语法检查（本机无 bash 由 CI 执行）。
 
-**M2-b 剩余动作**（全部在云端/Mac，本机无 Xcode 的物理边界）：
-1. 触发引擎基线流水线，验证托管 runner 工具链；
-2. fork 上 `make payload` → 注入 `YZLUI.framework` → 真机联调
+**M2-b 当前状态**（云构建已验证，本机无 Xcode 的物理边界仍在）：
+
+1. ✅ 引擎基线流水线跑通（macOS 托管 runner + cmake / JDK8 / ldid）；
+2. ✅ `make payload` → 构建并注入可执行的 `YZLUI.framework` → 最终 `.tipa` 硬校验通过；
+3. ⏳ 真机联调：TrollStore 安装 → YZL 界面 → 安装版本 → 启动进游戏
    （JIT/内存按既有 DEPLOYMENT-MATRIX 分流）。
-   （YZLUI framework target 已于 2026-11-06 补齐：`project.yml` 的 `YZLUI`
-   target + `YZLUI/YZLUIRootController.swift`；图标走 `YZLTheme.icon`
-   的 framework bundle 解析，独立 App 行为不变。）
+   （YZLUI framework target 已于 2026-11-06 修复：`project.yml` 的 `YZLUI`
+   target 链接 `WebKit.framework`；2026-11-06 再次确认 CI 不再容忍空壳 framework。）
+
+### 2026-11-06（三）：DarkRPG 整合包「卡在正在加载地形」
+
+现象：同一个整合包（1.20.1 / Fabric / 454 个模组）在 Windows 上用 PCL 能正常进世界，
+在 YZL 上一直停在「正在加载地形」（`ReceivingLevelScreen`——客户端已进世界，等渲染线程
+把出生点区块建出来）。对照 Amethyst 源码逐层排，落出三处 iOS 独有的差异：
+
+1. **堆大小是假的**。`-Xmx` 不是我们命令行传的，是 `JavaLauncher.m:211` 读
+   `java.auto_ram` / `java.allocated_memory` 算的；没写过偏好就按物理内存 25%
+   （4 GB 设备 = 1 GB）。PCL 那边给 8 GB，手机给 1–2 GB，454 个模组光世界加载就会
+   GC 到不动。→ 新增 `AmethystPreferences`：启动前把用户选的堆写进
+   `$AME_HOME/launcher_preferences_v2.plist`（下次启动由 Amethyst 自己算对），
+   同时在 `jvm_processed` 里补一条 `-Xmx`（`JavaLauncher.m:353` 会把它拼在
+   Amethyst 自己的参数之后，最后一条生效）——Amethyst 在 `main.m:301` 就已经把
+   偏好读进内存了，只写盘本次启动不会生效，两条路径必须都走。
+2. **Iris 光影**。整合包 `config/iris.properties` 里 `enableShaders=true`（Windswept
+   Fantasy）。Iris 在收到地形那一刻编译整套 shader 管线，而 iOS 走 gl4es /
+   MobileGlues / ANGLE 翻译层，缺 compute、SSBO、持久映射，编译线程会一直等下去。
+   → `MobileCompat` 启动前把它改成 `false`，保留 `shaderPack` 名字，回桌面端能开回来。
+3. **Sodium 的高级 staging buffer** 依赖 GL 4.4 持久映射，翻译层不可靠。
+   → `use_advanced_staging_buffers=false`、`cpu_render_ahead_limit=2`。
+
+另外把 `options.txt` 收敛到手机档位（视图距离 4 / 模拟距离 4 / 60 FPS / 关云层 /
+关生物群系过渡 / 关实体阴影），全部改动前备份到实例目录 `.yzl-compat-backup/`。
+
+- 设置页新增「iPhone 兼容」卡：**自动适配**（默认开）+ **极端兼容**
+  （再把 `iris` / `sodium` / `indium` / `reeses_sodium_options` 移进 `mods-ios-off/`，
+  换渲染器也能进）+「立即处理当前版本」/「恢复原样」。
+- 启动自检新增「整合包」一行：模组数量、光影是否已关、当前渲染器与 Sodium 0.5
+  是否匹配（`auto`/`gl4es` 与 Sodium 0.5 本来就不兼容，提前说，别让用户干等）。
+- `YZLGameEntry` 加**卡死采样**：启动后 120 / 240 / 420 秒各 dump 一次全部 Java
+  线程栈到 `<gameDir>/logs/yzl-stall-<版本>-<n>.log`。下次再卡，直接看线程栈就知道
+  是渲染线程、区块构建还是集成服务端 worldgen 在等锁，不用再猜。
 
 ### 下载管线端到端实测（2026-11-06，真实 Mojang 服务器）
 
@@ -273,15 +307,15 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 
 **仓库建议建成 Public**：Actions 的 macOS Runner 对私有仓库按 10 倍计费，免费额度 100 分钟/月大概只够 10 分钟 macOS 构建；公开仓库不占额度，而 iOS 端本来就要按 GPLv3 开源。`build-ipa.yml` 现在是两条独立的 job：`Device IPA (unsigned)` 出包（不依赖测试），`Unit tests (simulator)` 跑单测且失败不挡包；两边的构建日志都会作为 artifact 留下来。
 
-**要自己签名**：看 `docs/SIGNING.md`。Windows 自签走 `scripts/sign-ipa.ps1`（或 Sideloadly 的 Export 模式），macOS 侧用 `scripts/sign-ipa.sh` 与 `scripts/build-tipa.sh`，`scripts/make-ota-manifest.sh` 出 OTA 清单；entitlements 模板在 `packaging/`，免费账号用 `entitlements.free.plist`。前提是先有编译产物——本机没有 Xcode，目前仓库里还没有 IPA。
+**要自己签名**：看 `docs/SIGNING.md`。Windows 自签走 `scripts/sign-ipa.ps1`（或 Sideloadly 的 Export 模式），macOS 侧用 `scripts/sign-ipa.sh` 与 `scripts/build-tipa.sh`，`scripts/make-ota-manifest.sh` 出 OTA 清单；entitlements 模板在 `packaging/`，免费账号用 `entitlements.free.plist`。编译产物由 GitHub Actions 产出：外壳在 `build-output/YZL-Launcher-*-unsigned.ipa`，引擎整包在 `build-output/YZL-engine.tipa`。
 
 > 注意：这条流水线只适用于 M0 自制外壳。接入 Amethyst 引擎后，构建要改成它的 `Makefile` + CMake 流程（cmake、JDK 8、ldid、4 个子模块），并同时产出 `.ipa` 和 TrollStore 用的 `.tipa`。详见 `docs/POJAV-ENGINE-AUDIT.md` 第 8–9 节。
 
 ## 微软登录配置
 
-登录使用**设备代码流（device code flow）**，不需要重定向 URI，也不需要把密码交给启动器。默认公共客户端 ID 与安卓版一致，开箱即可登录。
+登录默认使用**微软 v1.0 浏览器授权码流**（`login.live.com/oauth20_authorize.srf` + App 内 `WKWebView` 拦截固定回调），密码只输在微软官方页面，不经过启动器。默认公共客户端 ID 与安卓版一致（`00000000402b5328`），开箱即可登录。自定义 Azure 公共客户端仍在设置里覆盖，走 v2.0 设备码流。
 
-1. 直接点「登录微软账户」，按弹窗提示在 `https://microsoft.com/link` 输入代码。
+1. 直接点「登录微软账户」，在弹出的微软官方页面完成登录。
 2. 如果想用自己的 Azure 应用：App registrations → New registration，账户类型选「仅个人 Microsoft 账户」。
 3. 在 Authentication 里打开 **Allow public client flows** 并保存。
 4. 复制 **Application (client) ID**，填入 App 的「设置 → 账户」。
@@ -291,9 +325,11 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 ## 里程碑
 
 - **M0（已完成）** 工程骨架、界面、版本清单、构建与侧载文档
-- **M1（代码完成，待编译）** 微软登录、版本安装、分片断点续传下载器、安装记录、启动自检与 LaunchPlan
+- **M1（已完成）** 微软登录、版本安装、分片断点续传下载器、安装记录、启动自检与 LaunchPlan；云构建通过，单测 139 个全绿
 - **M2（接缝完成）** LaunchCommand / RuntimeLocator / JITProbe / AmethystEngine + EngineBridge 已实现并带单测
-- **M2-b（✅ 完成，2026-11-06）** fork-overlay 路线全链路打通：Amethyst fork + YZL UI framework 注入 + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 新 Xcode 兼容补丁，CI 十轮迭代后 **success**。成品 `YZL-engine.tipa` 104.7 MB：引擎 + 20 图形 dylib + 6 Java 桥 jar + **JRE 8/17/21/25 全套（186 文件，rt.jar 63 MB、modules 77 MB、libjvm 16 MB）** + YZLUI.framework。YZL 外壳 76 个 Swift 文件在真实 Xcode 26 上编译全绿。**唯一缺口**：JRE 二进制来自 Pojav iOS v2.2 提取（jre8 确认；原 CDN assets.angelauramc.dev 已死，Wayback 无快照）——上线前建议向 Amethyst 社区索取最新版 JRE 包替换。
+- **M2-b（引擎包完成，待真机联调）** fork-overlay 路线：Amethyst fork + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 兼容补丁。成品 `YZL-engine.tipa` 含引擎、20 个图形 dylib、6 个 Java 桥 jar、**JRE 8/17/21/25 全套**、`launcher.jar` 内的 `YZLGameEntry`，以及可执行的 `YZLUI.framework`。
+  - **修正（2026-11-06）**：此前一版 `YZLUI.framework` 只有 `Info.plist` / `Assets.car`，缺 Mach-O 二进制（`YZLUI` 源码引用 `WKWebView` 但 framework target 没链接 WebKit，且 CI 对该步 `continue-on-error`）。现已补 `WebKit.framework` 依赖、去掉容错，并在注入后与最终 `.tipa` 两处硬校验 `Frameworks/YZLUI.framework/YZLUI`；run `42220940394` 通过。
+  - **剩余**：TrollStore 真机安装 → 确认进入 YZL 界面 → 安装版本 → 启动进游戏。JRE 二进制来自 Pojav iOS v2.2 提取（原 CDN 已失效），后续建议换 Amethyst 社区新版。
 - **M3（未开始）** 模组 / 整合包、三源聚合、联机能力
 
 ## 合规
