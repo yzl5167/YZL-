@@ -58,16 +58,7 @@ struct HomeView: View {
 
             HStack(spacing: 10) {
                 ghostButton("版本管理") { appState.selectedTab = .versions }
-                ghostButton(appState.currentInstall == nil ? "下载游戏" : "启动自检") {
-                    if appState.currentInstall == nil {
-                        if let version = appState.selectedVersion {
-                            appState.pendingInstallVersionID = version.id
-                        }
-                        appState.selectedTab = .versions
-                    } else {
-                        appState.requestLaunch()
-                    }
-                }
+                secondaryButton
             }
             .frame(width: 300)
             .padding(.top, 14)
@@ -173,6 +164,22 @@ struct HomeView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(YZLTheme.muted)
                 .lineLimit(1)
+        }
+    }
+
+    /// 第二位按钮跟随主页状态：安装中看自检，已安装可再下载一个版本，
+    /// 还没有可用版本时先去版本页选，避免和大按钮「下载游戏」重复。
+    @ViewBuilder
+    private var secondaryButton: some View {
+        if appState.currentInstall != nil {
+            ghostButton("启动自检") { appState.requestLaunch() }
+        } else if let version = appState.selectedVersion, appState.isInstalled(version.id) {
+            ghostButton("下载游戏") {
+                appState.pendingInstallVersionID = version.id
+                appState.selectedTab = .versions
+            }
+        } else {
+            ghostButton("选择版本") { appState.selectedTab = .versions }
         }
     }
 
