@@ -26,9 +26,14 @@ enum DownloadSource: String, CaseIterable, Identifiable {
 enum MirrorPolicy {
     static let storageKey = "downloadSource"
 
-    /// 当前生效的下载源；未设置或值非法时回退官方。
+    /// 当前生效的下载源。用户从未设置过时默认走国内 BMCLAPI 镜像——
+    /// 官方 CDN 在国内直连通常极慢，会让 3600 个资源对象排队到不可用。
+    /// 用户显式选过（含选回官方）后一律尊重其选择。
     static var current: DownloadSource {
-        source(UserDefaults.standard.string(forKey: storageKey))
+        guard let raw = UserDefaults.standard.string(forKey: storageKey), !raw.isEmpty else {
+            return .mirror
+        }
+        return source(raw)
     }
 
     static func source(_ raw: String?) -> DownloadSource {

@@ -4,7 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("memoryMB") private var memoryMB: Double = 2048
     @AppStorage(MicrosoftAuth.clientIdKey) private var clientId = MicrosoftAuth.defaultClientId
-    @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.official.rawValue
+    @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.mirror.rawValue
 
     var body: some View {
         ZStack {

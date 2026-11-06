@@ -153,13 +153,17 @@ final class AppState: ObservableObject {
         let service = MicrosoftAuthService(clientId: MicrosoftAuth.clientId)
         authTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
+            // 记录失败发生在哪一段，否则用户只看到一句「登录失败」无从排查。
+            var stage = "请求登录代码"
             do {
                 let code = try await service.requestDeviceCode()
                 self.authPhase = .awaitingUser(code)
 
+                stage = "等待你在微软网页完成授权"
                 let token = try await service.waitForToken(deviceCode: code)
                 self.authPhase = .exchanging
 
+                stage = "换取 Xbox / Minecraft 令牌"
                 let session = try await service.makeSession(from: token)
                 self.sessionStore.save(session)
                 self.session = session
@@ -171,7 +175,10 @@ final class AppState: ObservableObject {
             } catch is CancellationError {
                 self.authPhase = .idle
             } catch {
-                self.authPhase = .failed(error.localizedDescription)
+                let branch = MicrosoftAuth.clientId.caseInsensitiveCompare(MicrosoftAuth.defaultClientId) == .orderedSame
+                    ? "Live Connect（默认客户端）"
+                    : "Azure v2.0（自定义客户端）"
+                self.authPhase = .failed("\(stage)：\(error.localizedDescription)\n登录分支：\(branch)")
             }
             self.authTask = nil
         }

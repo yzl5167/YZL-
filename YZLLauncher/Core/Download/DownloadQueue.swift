@@ -72,18 +72,26 @@ private final class FileProgressAggregator {
 @MainActor
 final class DownloadQueue: ObservableObject {
     @Published private(set) var state = QueueState()
+    /// 队列忙时再次点「开始安装」的提示；此前是静默 return，用户以为按钮坏了。
+    @Published private(set) var notice: String?
 
     private let downloader: SegmentedDownloader
     private let fileConcurrency: Int
     private var runTask: Task<Void, Never>?
 
-    init(downloader: SegmentedDownloader = SegmentedDownloader(), fileConcurrency: Int = 8) {
+    /// 原版 1.20.1 约 3575 个资源对象都是 <4MiB 的小文件，单连接顺序请求；
+    /// 文件级并发从 8 提到 16，能显著缩短高延迟网络下的排队轮次。
+    init(downloader: SegmentedDownloader = SegmentedDownloader(), fileConcurrency: Int = 16) {
         self.downloader = downloader
         self.fileConcurrency = min(max(fileConcurrency, 1), 16)
     }
 
     func start(_ specs: [DownloadSpec], batchID: String? = nil, completion: (() -> Void)? = nil) {
-        guard state.phase != .running, runTask == nil else { return }
+        guard state.phase != .running, runTask == nil else {
+            notice = "已有安装任务进行中（\(state.batchID ?? "当前版本")），请等它完成或点「取消」后再开始另一个。"
+            return
+        }
+        notice = nil
 
         var next = QueueState()
         next.phase = .running
@@ -102,6 +110,10 @@ final class DownloadQueue: ObservableObject {
 
     func cancel() {
         runTask?.cancel()
+    }
+
+    func clearNotice() {
+        notice = nil
     }
 
     /// 失败 / 取消是终态，用户需要能主动清掉主页横幅，否则会一直常驻。

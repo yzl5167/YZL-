@@ -328,6 +328,27 @@ private struct VersionDetailPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                if let notice = installQueue.notice {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(YZLTheme.accentText)
+                        Text(notice)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(YZLTheme.text)
+                            .lineSpacing(3)
+                        Spacer(minLength: 4)
+                        Button("知道了") { installQueue.clearNotice() }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(YZLTheme.accentText)
+                            .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(YZLTheme.accentSoft)
+                    )
+                }
                 InstallCardView(model: model, queue: installQueue) { detail, fileCount, bytes in
                     appState.recordInstall(
                         detail: detail,

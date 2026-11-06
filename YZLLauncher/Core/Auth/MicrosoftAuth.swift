@@ -67,7 +67,7 @@ enum MicrosoftAuthError: LocalizedError {
         case .xbox(let message):
             return "Xbox 验证失败：\(message)"
         case .noProfile:
-            return "该账户没有 Minecraft: Java Edition 档案，请确认已购买游戏。"
+            return "该微软账户没有 Minecraft: Java Edition 档案（未购买或授权未同步）。没有正版也可以在账号页创建离线（伪正版）账号。"
         case .expired:
             return "登录代码已过期，请重新登录。"
         }
@@ -92,8 +92,18 @@ enum MicrosoftAuth {
 }
 
 struct MicrosoftAuthService {
+    /// 微软端点在国内偶发高延迟：请求超时 30s、整资源 120s，并允许等待网络恢复，
+    /// 避免一次抖动就被映射成「登录失败」。
+    static let defaultSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        configuration.waitsForConnectivity = true
+        return URLSession(configuration: configuration)
+    }()
+
     let clientId: String
-    var session: URLSession = .shared
+    var session: URLSession = MicrosoftAuthService.defaultSession
 
     /// Pojav 系默认公共客户端走 Live Connect；自定义 Azure 客户端走 v2.0 consumers。
     private var usesLiveConnect: Bool {
@@ -222,19 +232,28 @@ struct MicrosoftAuthService {
         )
     }
 
+    /// Live Connect 的 MSA v1 令牌用 `d=` 前缀；Azure v2.0 的 MSA PT 令牌用 `t=`。
+    /// 自定义客户端先按 v2.0 规范试 `t=`，失败再回退 `d=`，避免硬编码前缀导致登录必败。
     private func authenticateXbox(accessToken: String) async throws -> XboxToken {
-        let payload: [String: Any] = [
-            "Properties": [
-                "AuthMethod": "RPS",
-                "SiteName": "user.auth.xboxlive.com",
-                "RpsTicket": "d=\(accessToken)"
-            ],
-            "RelyingParty": "http://auth.xboxlive.com",
-            "TokenType": "JWT"
-        ]
-
-        let xbox = try await postJSON(XboxToken.self, to: Self.xboxURL, payload: payload)
-        return xbox
+        let prefixes = usesLiveConnect ? ["d"] : ["t", "d"]
+        var lastError: Error?
+        for prefix in prefixes {
+            do {
+                let payload: [String: Any] = [
+                    "Properties": [
+                        "AuthMethod": "RPS",
+                        "SiteName": "user.auth.xboxlive.com",
+                        "RpsTicket": "\(prefix)=\(accessToken)"
+                    ],
+                    "RelyingParty": "http://auth.xboxlive.com",
+                    "TokenType": "JWT"
+                ]
+                return try await postJSON(XboxToken.self, to: Self.xboxURL, payload: payload)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? MicrosoftAuthError.xbox("Xbox 认证失败")
     }
 
     private func authorizeXSTS(xboxToken: String) async throws -> XSTSToken {
@@ -281,7 +300,7 @@ struct MicrosoftAuthService {
 
         let (data, response) = try await send(request)
         guard response.statusCode == 200 else {
-            throw MicrosoftAuthError.oauth("Minecraft 登录失败（HTTP \(response.statusCode)）")
+            throw MicrosoftAuthError.oauth("Minecraft 登录失败 · \(errorDetail(from: data, status: response.statusCode))")
         }
         return try decode(MinecraftToken.self, from: data)
     }
@@ -295,7 +314,7 @@ struct MicrosoftAuthService {
             if response.statusCode == 404 {
                 throw MicrosoftAuthError.noProfile
             }
-            throw MicrosoftAuthError.oauth("获取 Minecraft 档案失败（HTTP \(response.statusCode)）")
+            throw MicrosoftAuthError.oauth("获取 Minecraft 档案失败 · \(errorDetail(from: data, status: response.statusCode))")
         }
         let profile = try decode(MinecraftProfile.self, from: data)
         let skinURL = profile.skins?.first(where: { ($0.state ?? "ACTIVE").uppercased() == "ACTIVE" })?.url
@@ -325,7 +344,7 @@ struct MicrosoftAuthService {
 
         let (data, response) = try await send(request)
         guard response.statusCode == 200 else {
-            throw MicrosoftAuthError.xbox("HTTP \(response.statusCode)")
+            throw MicrosoftAuthError.xbox(errorDetail(from: data, status: response.statusCode))
         }
         return try decode(T.self, from: data)
     }
@@ -356,11 +375,20 @@ struct MicrosoftAuthService {
         }
     }
 
-    private func errorMessage(from data: Data, status: Int) -> String {
+    /// 把服务端原始错误体带出来：Xbox / XSTS / Minecraft 各自的失败原因都不一样，
+    /// 只报「HTTP 4xx」用户无从排查。响应不是 OAuth 格式时退回原文前 240 字节。
+    private func errorDetail(from data: Data, status: Int) -> String {
         if let body = try? JSONDecoder().decode(OAuthErrorBody.self, from: data) {
-            return body.errorDescription ?? body.error
+            let suffix = body.errorDescription.map { " · \($0)" } ?? ""
+            return "HTTP \(status) · \(body.error)\(suffix)"
         }
-        return "HTTP \(status)"
+        let text = (String(data: data.prefix(240), encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "HTTP \(status)" : "HTTP \(status) · \(text)"
+    }
+
+    private func errorMessage(from data: Data, status: Int) -> String {
+        errorDetail(from: data, status: status)
     }
 
     private func formBody(_ values: [String: String]) -> Data {
@@ -398,8 +426,19 @@ private struct OAuthErrorBody: Decodable {
     }
 }
 
+/// `/user/authenticate` 只用 Token。DisplayClaims 在部分响应里缺失或不带 uhs，
+/// 强制解码会让整个登录在拿到有效 token 后仍失败；UHS 一律从 XSTS 响应取。
 struct XboxToken: Decodable {
     let token: String
+
+    enum CodingKeys: String, CodingKey {
+        case token = "Token"
+    }
+}
+
+struct XSTSToken: Decodable {
+    let token: String
+    let uhs: String
     let displayClaims: DisplayClaims
 
     struct DisplayClaims: Decodable {
@@ -414,19 +453,8 @@ struct XboxToken: Decodable {
         case token = "Token"
         case displayClaims = "DisplayClaims"
     }
-}
 
-struct XSTSToken: Decodable {
-    let token: String
-    let uhs: String
-    let displayClaims: XboxToken.DisplayClaims
-
-    enum CodingKeys: String, CodingKey {
-        case token = "Token"
-        case displayClaims = "DisplayClaims"
-    }
-
-    init(token: String, uhs: String, displayClaims: XboxToken.DisplayClaims) {
+    init(token: String, uhs: String, displayClaims: DisplayClaims) {
         self.token = token
         self.uhs = uhs
         self.displayClaims = displayClaims
@@ -435,7 +463,7 @@ struct XSTSToken: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         token = try container.decode(String.self, forKey: .token)
-        displayClaims = try container.decode(XboxToken.DisplayClaims.self, forKey: .displayClaims)
+        displayClaims = try container.decode(DisplayClaims.self, forKey: .displayClaims)
         guard let uhs = displayClaims.xui.first?.uhs else {
             throw DecodingError.dataCorruptedError(
                 forKey: .displayClaims,

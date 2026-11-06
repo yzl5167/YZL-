@@ -503,6 +503,14 @@ private struct LoginSheet: View {
                 .buttonStyle(PrimaryButtonStyle(prominent: false))
             }
             .frame(maxWidth: 380)
+
+            // 失败原因现在带阶段与服务端原始错误，方便复制出来定位。
+            Button("复制错误信息") {
+                UIPasteboard.general.string = message
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(YZLTheme.accentText)
+            .buttonStyle(.plain)
         }
         .padding(32)
     }
