@@ -1,0 +1,57 @@
+name: Relay engine artifact
+
+# 临时中转：把某次引擎构建的 artifact 从 GitHub 拉到 runner，
+# 再从 runner 上传到几个公开临时网盘，便于本机绕开慢速 Azure Blob 下载。
+# 用完可删除本工作流。产物不含任何账号令牌。
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Engine workflow run id'
+        required: true
+        default: '42220940394'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Download engine artifact from run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "${{ inputs.run_id }}" -n engine-build-main -D art --repo "${{ github.repository }}"
+          find art -type f -printf '%p %s\n'
+          TIPA=$(find art -name '*.tipa' | head -1)
+          test -n "$TIPA"
+          echo "TIPA=$TIPA" >> "$GITHUB_ENV"
+
+      - name: Upload to public mirrors
+        run: |
+          set -uo pipefail
+          ls -la "$TIPA"
+          echo '--- litterbox (72h) ---'
+          curl -sS --max-time 900 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$TIPA" https://litterbox.catbox.moe/resources/internals/api.php | tee litter.txt || true
+          echo '--- 0x0.st ---'
+          curl -sS --max-time 900 -F "file=@$TIPA" https://0x0.st | tee zero.txt || true
+          echo '--- temp.sh ---'
+          curl -sS --max-time 900 --upload-file "$TIPA" https://temp.sh/upload | tee temp.txt || true
+          echo '--- bashupload ---'
+          curl -sS --max-time 900 -T "$TIPA" https://bashupload.com/ | tee bash.txt || true
+          echo '--- gofile ---'
+          curl -sS --max-time 900 -F "file=@$TIPA" https://store1.gofile.io/uploadFile | tee gofile.json || true
+
+      - name: Print links
+        if: always()
+        run: |
+          for f in litter.txt zero.txt temp.txt bash.txt gofile.json; do
+            echo "===== $f ====="
+            cat "$f" 2>/dev/null || true
+            echo
+          done
