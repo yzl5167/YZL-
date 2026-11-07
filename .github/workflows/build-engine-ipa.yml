@@ -6,7 +6,12 @@ name: Engine baseline (M2-b experiment)
 #   2. 产物能否带 java_runtimes + Frameworks 全套 payload。
 # 第二阶段接线：构建 YZLUI.framework 并注入 payload（fork 补丁③的
 # 根视图 dlopen 未应用时，框架只是不被加载，无害）。
-# 设计与执行手册见 docs/M2B-ENGINE.md。
+# 第三阶段接线：同时产出两种安装形态——
+#   YZL-engine.tipa                      TrollStore（iOS 15–16 / 17.0，永久签名）
+#   YZL-engine-sideload-unsigned.ipa    iOS 17.4+ / 18.x 的 SideStore / 轻松签 重签包
+# 后者必须剥离 ldid 伪签与 TrollStore 私有 entitlement，否则重签在安装阶段被拒。
+# 两者都过 scripts/verify_engine_ipa.py 的产物完整性硬校验。
+# 设计与执行手册见 docs/M2B-ENGINE.md；侧载安装见 docs/IOS18-SIDELOAD.md。
 
 on:
   workflow_dispatch:
@@ -237,18 +242,43 @@ jobs:
           echo "YZLUI.framework 已注入 $APP/Frameworks"
           ls -la "$APP/Frameworks/YZLUI.framework"
 
-      - name: Package tipa / ipa
+      - name: Package TrollStore tipa
         run: |
           mkdir -p dist
           if [ -d amethyst/artifacts/Payload ]; then
             cd amethyst/artifacts
             zip -qry "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" Payload
-            cp "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" "$GITHUB_WORKSPACE/dist/YZL-engine-unsigned.ipa"
             cd - >/dev/null
           else
             echo "::error::Payload 目录不存在，无法出包"
             exit 1
           fi
+
+      # iOS 17.4+ / 18.x 不走 TrollStore：必须剥掉 ldid 伪签和 TrollStore 私有
+      # entitlement，否则 SideStore / 轻松签 重签会在安装阶段被拒。
+      # 旧逻辑只是把 .tipa 复制成 -unsigned.ipa，名字看着干净、内容仍是伪签包，
+      # 这里改为真正重新产出一个无签名、无私有权限的独立 IPA。
+      - name: Build clean sideload IPA (unsigned)
+        run: |
+          set -euo pipefail
+          bash scripts/make-sideload-ipa.sh \
+            "$GITHUB_WORKSPACE/amethyst/artifacts" \
+            "$GITHUB_WORKSPACE/dist/YZL-engine-sideload-unsigned.ipa"
+
+      - name: Verify engine payload completeness
+        run: |
+          set -euo pipefail
+          # 校验项：YZLUI 二进制是真 Mach-O、JRE 8/17 真实可用、launcher.jar /
+          # 图形翻译层 / Java 桥 jar 齐备；sideload 包额外校验签名与私有权限已清除。
+          # JRE 21/25 缺席只告警并写进报告，不阻断构建（当前上游源确实拿不到）。
+          python3 scripts/verify_engine_ipa.py \
+            "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" \
+            --mode trollstore \
+            --report "$GITHUB_WORKSPACE/dist/ENGINE-PAYLOAD-TROLLSTORE.txt"
+          python3 scripts/verify_engine_ipa.py \
+            "$GITHUB_WORKSPACE/dist/YZL-engine-sideload-unsigned.ipa" \
+            --mode sideload \
+            --report "$GITHUB_WORKSPACE/dist/ENGINE-PAYLOAD-SIDELOAD.txt"
 
       - name: Verify YZLUI binary inside final tipa
         run: |
