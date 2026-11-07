@@ -35,6 +35,12 @@ struct RootView: View {
                 .environmentObject(appState)
                 .yzlLargeSheet()
         }
+        // 全局安装进度弹窗（对照 Android 端 InstallOverlay）：任何页面触发的
+        // 安装都在这里统一显示进度 / 成功 / 失败，切页不中断。
+        .overlay {
+            InstallOverlay(queue: appState.installQueue)
+                .environmentObject(appState)
+        }
     }
 
     @ViewBuilder
@@ -42,6 +48,8 @@ struct RootView: View {
         switch appState.selectedTab {
         case .home:
             HomeView()
+        case .download:
+            DownloadView()
         case .versions:
             VersionsView()
         case .skin:
@@ -94,6 +102,7 @@ private struct YZLSidebar: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: compact ? 2 : 4) {
                         railButton(icon: "house.fill", label: "首页", tab: .home, compact: compact)
+                        railButton(icon: "arrow.down.circle.fill", label: "下载", tab: .download, compact: compact)
                         railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions, compact: compact)
                         railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin, compact: compact)
                         railButton(icon: "gearshape.fill", label: "设置", tab: .settings, compact: compact)

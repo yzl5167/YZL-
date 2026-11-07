@@ -1,15 +1,16 @@
 import SwiftUI
 
 /// 主页：仿 PC 端「安卓式主页」——白底、内容垂直居中，只有大头像、当前版本和启动按钮。
-/// 结构与 PC `MainWindow.xaml` 的活跃主页、安卓 `HomeScreen` 完全一致。
-/// 用 ScrollView + minHeight 居中：固定横屏的小屏设备（SE / 8）可用高度不足 400pt，
-/// 纯 VStack + Spacer 会把内容裁掉；横幅改为底部 overlay，不再参与布局挤占主体。
+/// 结构与 PC `MainWindow.xaml` 的活跃主页、安卓 `HomeScreen` 完全一致：
+/// PCL 风格 2D 大头像（无底板灰描边）→ 玩家名 → 账号类型 → 当前版本行 →
+/// 大启动按钮 → 状态行 → 「版本管理 / 下载游戏」两枚幽灵按钮（宽 300）。
+/// 安装进度已统一交给全局 InstallOverlay，这里不再放横幅。
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
+            ZStack {
                 YZLTheme.card
                     .ignoresSafeArea()
 
@@ -21,12 +22,8 @@ struct HomeView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                     .padding(.horizontal, 24)
-                    .padding(.bottom, showBanner ? 100 : 8)
+                    .padding(.bottom, 8)
                 }
-
-                bottomBanner
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 12)
             }
         }
     }
@@ -37,59 +34,46 @@ struct HomeView: View {
                 .padding(.top, 4)
 
             Text(appState.displayAccount?.name ?? "未登录")
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(YZLTheme.text)
                 .lineLimit(1)
-                .padding(.top, 6)
+                .padding(.top, 4)
 
-            Text(appState.displayAccount == nil ? "点击头像选择账号" : (appState.isOfflineLaunch ? "离线（伪正版）账号" : "微软正版账号"))
-                .font(.system(size: 11))
+            Text(accountTypeText)
+                .font(.system(size: 10))
                 .foregroundStyle(YZLTheme.muted)
-                .padding(.top, 2)
+                .padding(.top, 1)
 
             versionRow
-                .padding(.top, 20)
+                .padding(.top, 16)
 
             launchButton
-                .padding(.top, 18)
+                .padding(.top, 12)
 
             statusLine
                 .padding(.top, 10)
 
             HStack(spacing: 10) {
-                ghostButton("版本管理") { appState.selectedTab = .versions }
-                secondaryButton
+                ghostButton("版本管理") {
+                    appState.overlay = nil
+                    appState.selectedTab = .versions
+                }
+                ghostButton("下载游戏") {
+                    appState.overlay = nil
+                    appState.selectedTab = .download
+                }
             }
             .frame(width: 300)
-            .padding(.top, 14)
+            .padding(.top, 10)
         }
     }
 
-    private var bottomBanner: some View {
-        Group {
-            if showBanner {
-                InstallProgressBanner(
-                    queue: appState.installQueue,
-                    openVersions: { openVersions(for: appState.installQueue.state.batchID) },
-                    dismiss: { appState.installQueue.dismissTerminalState() }
-                )
-            }
-        }
-    }
-
-    /// 「去重试 / 去继续」要带上出问题的版本 id，否则进版本页后不会选中它。
-    private func openVersions(for batchID: String?) {
-        if let batchID {
-            appState.pendingInstallVersionID = batchID
-        }
-        appState.selectedTab = .versions
-    }
-
-    private var showBanner: Bool {
-        switch appState.installQueue.state.phase {
-        case .running, .failed, .cancelled: return true
-        case .idle, .finished: return false
-        }
+    /// 账号类型文案（对齐 Android 端 typeText：微软账号 / 皮肤站账号 / 离线账号）。
+    private var accountTypeText: String {
+        guard appState.displayAccount != nil else { return "点击头像登录账号" }
+        if appState.isOfflineLaunch { return "离线账号" }
+        if appState.isYggdrasilLaunch { return "皮肤站账号" }
+        return "微软账号"
     }
 
     private var avatar: some View {
@@ -97,7 +81,7 @@ struct HomeView: View {
             appState.overlay = .account
         } label: {
             ZStack(alignment: .bottomTrailing) {
-                AvatarView(size: 140, account: appState.displayAccount)
+                PclAvatarView(size: 140, account: appState.displayAccount)
                 Image(systemName: "pencil.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(YZLTheme.accent)
@@ -116,7 +100,7 @@ struct HomeView: View {
             HStack(spacing: 9) {
                 GrassBlockIcon(size: 26)
                 Text("当前版本")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
                 Text(appState.selectedVersion?.id ?? "还没有安装版本")
                     .font(.system(size: 17, weight: .semibold))
@@ -141,11 +125,11 @@ struct HomeView: View {
                 Image(systemName: appState.launchButtonIcon)
                     .font(.system(size: 19, weight: .semibold))
                 Text(appState.launchButtonTitle)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: 320)
-            .frame(height: 56)
+            .frame(maxWidth: 300)
+            .frame(height: 52)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(YZLTheme.accent)
@@ -167,22 +151,6 @@ struct HomeView: View {
         }
     }
 
-    /// 第二位按钮跟随主页状态：安装中看自检，已安装可再下载一个版本，
-    /// 还没有可用版本时先去版本页选，避免和大按钮「下载游戏」重复。
-    @ViewBuilder
-    private var secondaryButton: some View {
-        if appState.currentInstall != nil {
-            ghostButton("启动自检") { appState.requestLaunch() }
-        } else if let version = appState.selectedVersion, appState.isInstalled(version.id) {
-            ghostButton("下载游戏") {
-                appState.pendingInstallVersionID = version.id
-                appState.selectedTab = .versions
-            }
-        } else {
-            ghostButton("选择版本") { appState.selectedTab = .versions }
-        }
-    }
-
     private func ghostButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -200,87 +168,5 @@ struct HomeView: View {
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    /// 主页底部安装进度条（仅在安装/失败/取消态显示，失败与取消可主动清除）。
-    private struct InstallProgressBanner: View {
-        @ObservedObject var queue: DownloadQueue
-        var openVersions: () -> Void
-        var dismiss: () -> Void
-
-        var body: some View {
-            switch queue.state.phase {
-            case .running:
-                YZLCard(padding: 12) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack {
-                            Text("正在安装 \(queue.state.batchID ?? "版本")")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(YZLTheme.text)
-                            Spacer()
-                            Text("\(queue.state.doneFiles)/\(queue.state.totalFiles)")
-                                .font(.system(size: 10))
-                                .foregroundStyle(YZLTheme.muted)
-                        }
-                        ProgressView(value: queue.state.progress)
-                            .tint(YZLTheme.accent)
-                        HStack(spacing: 6) {
-                            Text("\(InstallFormats.bytes(queue.state.doneBytes)) / \(InstallFormats.bytes(queue.state.totalBytes))")
-                            Text("·")
-                            Text(InstallFormats.speed(queue.state.speedBytesPerSecond))
-                            Spacer()
-                            Button("取消") {
-                                queue.cancel()
-                            }
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.danger)
-                            .buttonStyle(.plain)
-                        }
-                        .font(.system(size: 10))
-                        .foregroundStyle(YZLTheme.muted)
-                    }
-                }
-            case .failed(let message):
-                YZLCard(padding: 12) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(YZLTheme.danger)
-                        Text("安装失败：\(message)")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(YZLTheme.danger)
-                            .lineLimit(2)
-                        Spacer(minLength: 4)
-                        Button("去重试", action: openVersions)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.accentText)
-                            .buttonStyle(.plain)
-                        Button("清除", action: dismiss)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.muted)
-                            .buttonStyle(.plain)
-                    }
-                }
-            case .cancelled:
-                YZLCard(padding: 12) {
-                    HStack(spacing: 10) {
-                        Text("安装已暂停，已下载的分片会保留。")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(YZLTheme.muted)
-                        Spacer(minLength: 4)
-                        Button("去继续", action: openVersions)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.accentText)
-                            .buttonStyle(.plain)
-                        Button("清除", action: dismiss)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.muted)
-                            .buttonStyle(.plain)
-                    }
-                }
-            case .idle, .finished:
-                EmptyView()
-            }
-        }
     }
 }

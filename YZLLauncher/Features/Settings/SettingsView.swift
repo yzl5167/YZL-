@@ -17,11 +17,13 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("memoryMB") private var memoryMB: Double = 2048
     @AppStorage(MicrosoftAuth.clientIdKey) private var clientId = MicrosoftAuth.defaultClientId
-    @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.mirror.rawValue
+    @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.auto.rawValue
     @AppStorage(MobileCompat.Settings.enabledKey) private var compatEnabled = true
     @AppStorage(MobileCompat.Settings.aggressiveKey) private var compatAggressive = false
     @State private var isProbingSources = false
     @State private var sourceProbeResults: [SourceProbeOutcome] = []
+    @State private var showClearCacheConfirm = false
+    @State private var cacheStatus: String?
 
     var body: some View {
         ZStack {
@@ -33,6 +35,7 @@ struct SettingsView: View {
                     launchCard
                     compatCard
                     downloadCard
+                    storageCard
                     diagnosticsCard
                     aboutCard
                     Text("YZL Launcher 与 Amethyst / PojavLauncher 团队无隶属关系。")
@@ -167,6 +170,31 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
 
+                // 当前账号行（对齐 Android 端设置页卡3）。
+                if appState.displayAccount != nil {
+                    HStack(spacing: 10) {
+                        AvatarView(size: 42, account: appState.displayAccount)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(appState.displayAccount?.name ?? "")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(YZLTheme.text)
+                            Text(appState.activeAccountKindText)
+                                .font(.system(size: 9))
+                                .foregroundStyle(YZLTheme.muted)
+                        }
+                        Spacer()
+                        if let id = appState.displayAccount?.id {
+                            StatusBadge(text: String(id.prefix(8)), tone: .neutral)
+                        }
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(YZLTheme.field))
+                } else {
+                    Text("还没有账号，去账号管理添加离线、微软或皮肤站账号。")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.muted)
+                }
+
                 TextField("Azure 公共客户端 ID", text: $clientId)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -266,6 +294,60 @@ struct SettingsView: View {
                         .lineSpacing(3)
                 }
             }
+        }
+    }
+
+    /// 数据与存储（对齐 Android 端设置页卡5）：游戏目录、清理下载缓存。
+    private var storageCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("数据与存储")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                infoRow("游戏目录", DownloadPaths.versionsDirectory().path)
+                infoRow("已安装版本", "\(appState.installedVersions.count) 个")
+                infoRow("下载缓存", "临时分片与清单缓存 · \(InstallFormats.bytes(DownloadCache.pendingBytes()))")
+
+                HStack(spacing: 10) {
+                    Button {
+                        UIPasteboard.general.string = DownloadPaths.versionsDirectory().path
+                        cacheStatus = "游戏目录路径已复制。"
+                    } label: {
+                        Text("复制游戏目录")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+
+                    Button(role: .destructive) {
+                        showClearCacheConfirm = true
+                    } label: {
+                        Text("清理下载缓存")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                }
+
+                if let cacheStatus {
+                    Text(cacheStatus)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.text)
+                        .lineSpacing(3)
+                }
+
+                Text("清理只删除临时分片和版本清单缓存，不会删除已安装的游戏文件、账号或皮肤。")
+                    .font(.system(size: 9))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+            }
+        }
+        .alert("清理下载缓存？", isPresented: $showClearCacheConfirm) {
+            Button("清理", role: .destructive) {
+                let result = DownloadCache.clear()
+                cacheStatus = result.lines.joined(separator: "；")
+                    + "（共 \(InstallFormats.bytes(result.bytesRemoved))）"
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删除未完成的分片文件、版本清单缓存和临时文件。已安装的游戏文件不会受影响，但未完成的下载需要重新开始。")
         }
     }
 

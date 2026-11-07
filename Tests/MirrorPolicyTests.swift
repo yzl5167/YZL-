@@ -84,11 +84,30 @@ final class MirrorPolicyTests: XCTestCase {
         )
     }
 
-    func testSourceFallsBackToOfficialOnBadValue() {
-        XCTAssertEqual(MirrorPolicy.source(nil), .official)
-        XCTAssertEqual(MirrorPolicy.source(""), .official)
-        XCTAssertEqual(MirrorPolicy.source("whatever"), .official)
+    func testSourceFallsBackToAutoOnBadValue() {
+        // 三档化（对齐 Android 端）后，非法值回退到「自动」。
+        XCTAssertEqual(MirrorPolicy.source(nil), .auto)
+        XCTAssertEqual(MirrorPolicy.source(""), .auto)
+        XCTAssertEqual(MirrorPolicy.source("whatever"), .auto)
         XCTAssertEqual(MirrorPolicy.source("mirror"), .mirror)
+        XCTAssertEqual(MirrorPolicy.source("official"), .official)
+    }
+
+    // MARK: - 三档候选顺序（自动 / 镜像 → 镜像优先；官方 → 官方优先）
+
+    func testCandidateOrder() {
+        XCTAssertEqual(MirrorPolicy.candidateOrder(for: .auto), [.mirror, .official])
+        XCTAssertEqual(MirrorPolicy.candidateOrder(for: .mirror), [.mirror, .official])
+        XCTAssertEqual(MirrorPolicy.candidateOrder(for: .official), [.official, .mirror])
+    }
+
+    func testAutoSourceRewritesLikeMirror() throws {
+        // 自动档与镜像档同一张映射表：镜像优先。
+        let url = try XCTUnwrap(URL(string: "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"))
+        XCTAssertEqual(
+            MirrorPolicy.rewrite(url, source: .auto).absoluteString,
+            MirrorPolicy.rewrite(url, source: .mirror).absoluteString
+        )
     }
 
     // MARK: - 加载器条目解码（Fabric 有 stable，Quilt 没有）

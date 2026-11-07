@@ -3,11 +3,15 @@ import UniformTypeIdentifiers
 
 struct VersionsView: View {
     @EnvironmentObject private var appState: AppState
-    @StateObject private var viewModel = VersionListViewModel()
     @State private var selectedVersion: MinecraftVersion?
-    @State private var searchText = ""
     @State private var showModpackPicker = false
     @State private var pickedModpackURL: URL?
+
+    /// 版本页只管本地已安装版本（对齐 Android 端 VersionsScreen）；
+    /// 从清单挑新版本去「下载」页。
+    private var installedVersions: [MinecraftVersion] {
+        appState.installedVersions.map(\.minecraftVersion)
+    }
 
     var body: some View {
         ZStack {
@@ -15,11 +19,8 @@ struct VersionsView: View {
             VStack(spacing: 0) {
                 pageHeader
                 HStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        filterBar
-                        content
-                    }
-                    .frame(width: 360)
+                    content
+                        .frame(width: 360)
 
                     Rectangle()
                         .fill(YZLTheme.border)
@@ -32,12 +33,13 @@ struct VersionsView: View {
             }
         }
         .task {
-            await viewModel.loadIfNeeded()
             if let pending = appState.pendingInstallVersionID,
-               let match = listedVersions.first(where: { $0.id == pending }) {
+               let match = installedVersions.first(where: { $0.id == pending }) {
                 selectedVersion = match
-            } else if selectedVersion == nil {
-                selectedVersion = appState.selectedVersion ?? listedVersions.first
+            } else if selectedVersion == nil || !installedVersions.contains(where: { $0.id == selectedVersion?.id }) {
+                selectedVersion = appState.selectedVersion.flatMap { version in
+                    installedVersions.first { $0.id == version.id }
+                } ?? installedVersions.first
             }
         }
         .sheet(isPresented: $showModpackPicker) {
@@ -67,7 +69,9 @@ struct VersionsView: View {
                 Text("版本管理")
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(YZLTheme.text)
-                Text("Mojang 版本清单 · 已安装的版本会走启动自检")
+                Text(installedVersions.isEmpty
+                     ? "还没有安装版本"
+                     : "共 \(installedVersions.count) 个本地版本 · 选中后才能导出或删除")
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
             }
@@ -79,106 +83,16 @@ struct VersionsView: View {
             }
             .buttonStyle(PrimaryButtonStyle(prominent: false))
             .frame(width: 106)
-
-            Button {
-                Task { await viewModel.reload() }
-            } label: {
-                Text("刷新")
-            }
-            .buttonStyle(PrimaryButtonStyle(prominent: false))
-            .frame(width: 74)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
         .padding(.bottom, 10)
     }
 
-    private var filterBar: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Text(viewModel.versions.isEmpty ? "Mojang 版本清单" : "共 \(searched.count) 个版本")
-                    .font(.system(size: 12))
-                    .foregroundStyle(YZLTheme.muted)
-
-                Spacer()
-
-                Picker("版本类型", selection: $viewModel.showSnapshots) {
-                    Text("正式版").tag(false)
-                    Text("全部").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 130)
-            }
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundStyle(YZLTheme.muted)
-
-                TextField("搜索版本号，例如 1.21.10", text: $searchText)
-                    .font(.system(size: 12))
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(YZLTheme.lightMuted)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("清空搜索")
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(YZLTheme.field)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(YZLTheme.border, lineWidth: 1)
-            )
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-    }
-
-    /// 清单版本 + 本地已安装但不在清单里的版本（Fabric / Forge 等加载器 profile）。
-    /// 加载器版本装完后在版本页可见、可选、可启动。
-    private var listedVersions: [MinecraftVersion] {
-        var result = viewModel.filtered
-        let listed = Set(result.map(\.id))
-        let extras = appState.installedVersions
-            .filter { !listed.contains($0.id) }
-            .map(\.minecraftVersion)
-        result.append(contentsOf: extras)
-        return result
-    }
-
-    private var searched: [MinecraftVersion] {
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return listedVersions }
-        let needle = trimmed.lowercased()
-        return listedVersions.filter { version in
-            version.id.lowercased().contains(needle)
-                || version.typeLabel.lowercased().contains(needle)
-                || version.releaseDateText.lowercased().contains(needle)
-        }
-    }
-
     @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading && viewModel.versions.isEmpty {
-            loadingView
-        } else if let error = viewModel.errorMessage, listedVersions.isEmpty {
-            errorView(message: error)
-        } else if searched.isEmpty {
-            emptySearchView
+        if installedVersions.isEmpty {
+            emptyState
         } else {
             versionList
         }
@@ -207,55 +121,25 @@ struct VersionsView: View {
         }
     }
 
-    private var loadingView: some View {
+    private var emptyState: some View {
         VStack(spacing: 10) {
             Spacer()
-            ProgressView()
-            Text("正在从 Mojang 获取版本清单…")
-                .font(.system(size: 12))
-                .foregroundStyle(YZLTheme.muted)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func errorView(message: String) -> some View {
-        VStack(spacing: 10) {
-            Spacer()
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 30, weight: .light))
+            Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 32, weight: .light))
                 .foregroundStyle(YZLTheme.lightMuted)
-            Text("获取版本清单失败")
+            Text("还没有安装版本")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(YZLTheme.text)
-            Text(message)
+            Text("去下载页选择一个版本，支持原版和 Fabric；也可以导入整合包。")
                 .font(.system(size: 11))
                 .foregroundStyle(YZLTheme.muted)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Button("重试") {
-                Task { await viewModel.reload() }
+            Button("去下载游戏") {
+                appState.selectedTab = .download
             }
-            .buttonStyle(PrimaryButtonStyle(prominent: false))
-            .padding(.horizontal, 40)
-            .padding(.top, 4)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var emptySearchView: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(YZLTheme.lightMuted)
-            Text("没有匹配的版本")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(YZLTheme.text)
-            Text(searchText.isEmpty ? "换个筛选条件试试" : "换个版本号或类型关键词搜索")
-                .font(.system(size: 10.5))
-                .foregroundStyle(YZLTheme.muted)
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.top, 6)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -263,38 +147,14 @@ struct VersionsView: View {
 
     private var versionList: some View {
         List {
-            if let error = viewModel.errorMessage {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("版本清单刷新失败，当前显示本地已安装版本", systemImage: "wifi.exclamationmark")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(YZLTheme.warningText)
-                        Text(error)
-                            .font(.system(size: 10))
-                            .foregroundStyle(YZLTheme.muted)
-                            .lineLimit(3)
-                        Button("重试") {
-                            Task { await viewModel.reload() }
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(YZLTheme.accent)
-                    }
-                    .padding(.vertical, 4)
-                }
-                .listRowBackground(YZLTheme.warningSoft)
-            }
-
-            ForEach(searched) { version in
+            ForEach(installedVersions) { version in
                 Button {
                     selectedVersion = version
-                    if appState.pendingInstallVersionID != version.id {
-                        appState.pendingInstallVersionID = nil
-                    }
                 } label: {
                     VersionRow(
                         version: version,
                         isCurrent: appState.selectedVersion?.id == version.id,
-                        isInstalled: appState.isInstalled(version.id),
+                        isInstalled: true,
                         isSelected: selectedVersion?.id == version.id
                     )
                 }
@@ -307,9 +167,6 @@ struct VersionsView: View {
         }
         .listStyle(.insetGrouped)
         .yzlClearListBackground()
-        .refreshable {
-            await viewModel.reload()
-        }
     }
 }
 

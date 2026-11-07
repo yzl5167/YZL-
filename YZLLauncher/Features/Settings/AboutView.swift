@@ -15,6 +15,7 @@ struct AboutView: View {
 
                     VStack(spacing: 14) {
                         runtimeCard
+                        thanksCard
                         licenseCard
                         Text("仅用于学习与自用。游戏资源从 Mojang 官方下载，用户需自备正版账户。")
                             .font(.system(size: 10))
@@ -110,6 +111,63 @@ struct AboutView: View {
             }
         }
     }
+
+    /// 特别感谢（对齐 Android 端关于页）：给启动器提供基础能力、数据或参考的项目。
+    private var thanksCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("特别感谢")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+                Text("以下软件、服务和社区为 YZL 启动器提供了基础能力、数据或参考。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+
+                ForEach(Self.thanks) { entry in
+                    HStack(spacing: 10) {
+                        Text(entry.monogram)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(entry.color)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(entry.color.opacity(0.14))
+                            )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(YZLTheme.text)
+                            Text(entry.description)
+                                .font(.system(size: 9))
+                                .foregroundStyle(YZLTheme.muted)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private struct ThanksEntry: Identifiable {
+        let monogram: String
+        let name: String
+        let description: String
+        let color: Color
+
+        var id: String { name }
+    }
+
+    private static let thanks: [ThanksEntry] = [
+        ThanksEntry(monogram: "P", name: "PCL / Plain Craft Launcher", description: "界面风格与头像渲染的参考", color: Color(red: 0.231, green: 0.510, blue: 0.965)),
+        ThanksEntry(monogram: "F", name: "Fold Craft Launcher (FCL)", description: "安卓端启动内核与界面思路", color: Color(red: 0.078, green: 0.722, blue: 0.651)),
+        ThanksEntry(monogram: "A", name: "Amethyst-iOS", description: "iOS 启动内核（GPLv3）", color: Color(red: 0.545, green: 0.361, blue: 0.965)),
+        ThanksEntry(monogram: "C", name: "CmlLib.Core", description: "PC 端版本安装与启动库", color: Color(red: 0.043, green: 0.647, blue: 0.914)),
+        ThanksEntry(monogram: "B", name: "BMCLAPI", description: "国内下载镜像", color: Color(red: 0.133, green: 0.773, blue: 0.369)),
+        ThanksEntry(monogram: "M", name: "Modrinth / CurseForge", description: "模组与整合包来源", color: Color(red: 0.063, green: 0.725, blue: 0.506)),
+        ThanksEntry(monogram: "L", name: "LittleSkin", description: "皮肤站与 authlib-injector 生态", color: Color(red: 0.925, green: 0.282, blue: 0.600)),
+        ThanksEntry(monogram: "M", name: "Minecraft / Mojang", description: "游戏本体的版权归 Mojang 所有", color: Color(red: 0.396, green: 0.639, blue: 0.051))
+    ]
 
     private var licenseCard: some View {
         YZLCard {

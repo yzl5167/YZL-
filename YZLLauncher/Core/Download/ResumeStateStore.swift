@@ -13,9 +13,7 @@ final class ResumeStateStore {
         if let directory {
             self.directory = directory
         } else {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            self.directory = base.appendingPathComponent("YZLDownloads", isDirectory: true)
+            self.directory = DownloadCache.resumeDirectory()
         }
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }

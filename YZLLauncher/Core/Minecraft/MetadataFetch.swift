@@ -11,10 +11,8 @@ enum MetadataFetcher {
     static let attemptsPerSource = 2
 
     static func candidates(for url: URL) -> [URL] {
-        let active = MirrorPolicy.current
-        let alternate: DownloadSource = active == .mirror ? .official : .mirror
         var result: [URL] = []
-        for source in [active, alternate] {
+        for source in MirrorPolicy.candidateOrder(for: MirrorPolicy.current) {
             let candidate = MirrorPolicy.rewrite(url, source: source)
             if !result.contains(candidate) {
                 result.append(candidate)

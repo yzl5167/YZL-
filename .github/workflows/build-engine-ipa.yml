@@ -15,6 +15,10 @@ on:
         description: 'Amethyst pin（分支名 / SHA / tag）'
         required: false
         default: 'main'
+      zulu_jre:
+        description: 'JRE 来源实验：传 1 启用 Zulu JRE 改写源（默认关闭）'
+        required: false
+        default: ''
 
 jobs:
   build-engine:

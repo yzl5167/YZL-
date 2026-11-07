@@ -178,10 +178,9 @@ enum InstallPlanner {
         // piston-data、libraries.minecraft.net（或 maven）、resources.download.minecraft.net，
         // 全部命中 MirrorPolicy 的映射表。主源与备用源同时带上，下载失败自动换源。
         let bytes = size ?? 0
-        let active = MirrorPolicy.current
-        let alternate: DownloadSource = active == .mirror ? .official : .mirror
-        let primary = MirrorPolicy.rewrite(url, source: active)
-        let fallback = MirrorPolicy.rewrite(url, source: alternate)
+        let order = MirrorPolicy.candidateOrder(for: MirrorPolicy.current)
+        let primary = MirrorPolicy.rewrite(url, source: order[0])
+        let fallback = MirrorPolicy.rewrite(url, source: order[1])
         return DownloadSpec(
             id: id,
             url: primary,
