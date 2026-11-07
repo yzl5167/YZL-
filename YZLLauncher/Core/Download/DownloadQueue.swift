@@ -80,10 +80,10 @@ final class DownloadQueue: ObservableObject {
     private var runTask: Task<Void, Never>?
 
     /// 原版 1.20.1 约 3575 个资源对象都是 <4MiB 的小文件，单连接顺序请求；
-    /// 文件级并发从 8 提到 16，能显著缩短高延迟网络下的排队轮次。
-    init(downloader: SegmentedDownloader = SegmentedDownloader(), fileConcurrency: Int = 16) {
+    /// 文件级并发提到 24（对齐 Android 端 Wi-Fi 档），显著缩短高延迟网络下的排队轮次。
+    init(downloader: SegmentedDownloader = SegmentedDownloader(), fileConcurrency: Int = 24) {
         self.downloader = downloader
-        self.fileConcurrency = min(max(fileConcurrency, 1), 16)
+        self.fileConcurrency = min(max(fileConcurrency, 1), 24)
     }
 
     func start(_ specs: [DownloadSpec], batchID: String? = nil, completion: (() -> Void)? = nil) {

@@ -1,7 +1,9 @@
 import Foundation
 
 enum InstallPlanner {
-    static let smallFileThreshold: Int64 = 4_194_304
+    /// 超过该大小的文件分 8 路并发下载；1–4MB 的中小文件也走并发
+    /// （2026-11-08 从 4MB 降下来，提高整体吞吐）。
+    static let smallFileThreshold: Int64 = 1_048_576
     static let assetsBaseURL = "https://resources.download.minecraft.net/"
 
     enum Kind: String, Equatable {

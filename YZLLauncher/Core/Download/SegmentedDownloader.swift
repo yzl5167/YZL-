@@ -44,7 +44,7 @@ final class SegmentedDownloader {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = 30
             config.timeoutIntervalForResource = 900
-            config.httpMaximumConnectionsPerHost = 12
+            config.httpMaximumConnectionsPerHost = 24
             config.httpAdditionalHeaders = ["User-Agent": "YZLLauncher/0.1 (iOS)"]
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.urlCache = nil

@@ -96,26 +96,25 @@ private struct YZLSidebar: View {
 
             VStack(spacing: 0) {
                 brand(compact: compact)
-                    .padding(.top, compact ? 8 : 14)
-                    .padding(.bottom, compact ? 8 : 14)
+                    .padding(.top, compact ? 6 : 14)
+                    .padding(.bottom, compact ? 6 : 14)
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: compact ? 2 : 4) {
-                        railButton(icon: "house.fill", label: "首页", tab: .home, compact: compact)
-                        railButton(icon: "arrow.down.circle.fill", label: "下载", tab: .download, compact: compact)
-                        railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions, compact: compact)
-                        railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin, compact: compact)
-                        railButton(icon: "gearshape.fill", label: "设置", tab: .settings, compact: compact)
-                    }
-                    .padding(.vertical, 1)
+                // 5 个 tab 固定排布、不可滚动（紧凑模式收紧行高，小屏横屏也放得下）。
+                VStack(spacing: compact ? 1 : 4) {
+                    railButton(icon: "house.fill", label: "首页", tab: .home, compact: compact)
+                    railButton(icon: "arrow.down.circle.fill", label: "下载", tab: .download, compact: compact)
+                    railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions, compact: compact)
+                    railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin, compact: compact)
+                    railButton(icon: "gearshape.fill", label: "设置", tab: .settings, compact: compact)
                 }
-                .frame(maxHeight: .infinity)
+
+                Spacer(minLength: 0)
 
                 accountButton(compact: compact)
                     .padding(.bottom, compact ? 2 : 6)
 
                 aboutButton(compact: compact)
-                    .padding(.bottom, compact ? 8 : 14)
+                    .padding(.bottom, compact ? 6 : 14)
             }
             .frame(width: 84)
             .frame(maxHeight: .infinity)
@@ -144,18 +143,18 @@ private struct YZLSidebar: View {
             appState.overlay = nil
             appState.selectedTab = tab
         } label: {
-            VStack(spacing: compact ? 3 : 4) {
+            VStack(spacing: compact ? 2 : 4) {
                 Image(systemName: icon)
-                    .font(.system(size: compact ? 18 : 20, weight: .medium))
-                    .frame(width: 44, height: compact ? 26 : 30)
+                    .font(.system(size: compact ? 17 : 20, weight: .medium))
+                    .frame(width: 44, height: compact ? 22 : 30)
                 Text(label)
-                    .font(.system(size: compact ? 9.5 : 10, weight: .medium))
+                    .font(.system(size: compact ? 9 : 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .foregroundStyle(selected ? YZLTheme.accent : YZLTheme.muted)
             .frame(width: 64)
-            .padding(.vertical, compact ? 4 : 5)
+            .padding(.vertical, compact ? 2 : 5)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(selected ? YZLTheme.accentSoft : Color.clear)

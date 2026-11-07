@@ -10,9 +10,6 @@ struct SkinView: View {
     @State private var uploadModel = "classic"
     @State private var isYggdrasilBusy = false
     @State private var yggdrasilMessage: String?
-    /// 3D 预览的当前视角（拖动 / 预设按钮共用）。
-    @State private var yaw3D: CGFloat = Skin3DView.defaultYaw
-    @State private var pitch3D: CGFloat = Skin3DView.defaultPitch
     /// 微软账号的皮肤上传 / 披风管理状态。
     @State private var microsoftVariant = "classic"
     @State private var microsoftCapes: [MinecraftCape] = []
@@ -38,7 +35,6 @@ struct SkinView: View {
                     VStack(spacing: 14) {
                         if let account = appState.displayAccount {
                             accountCard(account)
-                            skinCard(account)
                             if appState.activeYggdrasilAccount != nil {
                                 yggdrasilSkinCard
                             }
@@ -581,90 +577,7 @@ struct SkinView: View {
         }
     }
 
-    /// 皮肤预览：3D 模型为主（拖动旋转 + 走路动画），右侧保留纹理表小图作对照。
-    private func skinCard(_ account: MicrosoftAccount) -> some View {
-        YZLCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("皮肤预览")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(YZLTheme.text)
-
-                HStack(alignment: .top, spacing: 16) {
-                    Skin3DView(
-                        account: account,
-                        skinModel: skinModelForPreview,
-                        canvasSize: 210,
-                        yawDeg: $yaw3D,
-                        pitchDeg: $pitch3D
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(YZLTheme.field)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(YZLTheme.border, lineWidth: 1)
-                    )
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("拖动旋转 · 自动走路摆臂")
-                            .font(.system(size: 11))
-                            .foregroundStyle(YZLTheme.muted)
-
-                        HStack(spacing: 8) {
-                            Button("正面") {
-                                yaw3D = 0
-                                pitch3D = 4
-                            }
-                            .buttonStyle(PrimaryButtonStyle(prominent: false))
-
-                            Button("背面") {
-                                yaw3D = 180
-                                pitch3D = 4
-                            }
-                            .buttonStyle(PrimaryButtonStyle(prominent: false))
-
-                            Button("重置") {
-                                yaw3D = Skin3DView.defaultYaw
-                                pitch3D = Skin3DView.defaultPitch
-                            }
-                            .buttonStyle(PrimaryButtonStyle(prominent: false))
-                        }
-
-                        SkinBodyView(size: 88, account: account)
-                            .frame(width: 88, height: 88)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(YZLTheme.border, lineWidth: 1)
-                            )
-
-                        Text(skinCardNote)
-                            .font(.system(size: 10))
-                            .foregroundStyle(YZLTheme.lightMuted)
-                            .lineSpacing(3)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    private var skinModelForPreview: String {
-        appState.activeYggdrasilAccount?.skinModel
-            ?? appState.activeOfflineAccount?.skinModel
-            ?? "steve"
-    }
-
-    private var skinCardNote: String {
-        if appState.activeYggdrasilAccount != nil {
-            return "贴图来自皮肤站 sessionserver。"
-        }
-        if appState.activeOfflineAccount != nil {
-            return "贴图来自本地导入或默认占位。"
-        }
-        return "贴图来自 Mojang 档案。"
-    }
+    // 3D 皮肤预览已按需求移除；皮肤效果直接看主页大头像（PCL 风格 2D）。
 
     private var emptyCard: some View {
         YZLCard(padding: 22) {
