@@ -304,6 +304,21 @@ final class AppState: ObservableObject {
     /// 启动用的统一档案：正版 / 皮肤站 / 离线统一套进 MicrosoftAccount。
     var launchAccount: MicrosoftAccount? { displayAccount }
 
+    /// 展示用档案 + 「微软↔皮肤站回退」（对齐 PC 端 `FindMatchingSkinStationAccount`）：
+    /// 微软账号官方档案没有皮肤时，借用同名皮肤站账号的材质；没有同名但皮肤站
+    /// 账号只有一个时也借用。只影响展示（头像/皮肤页），不改启动令牌。
+    var displayAccountWithSkinFallback: MicrosoftAccount? {
+        guard let account = displayAccount,
+              !isOfflineLaunch, !isYggdrasilLaunch,
+              account.skinURL == nil, !yggdrasilAccounts.isEmpty else {
+            return displayAccount
+        }
+        let match = yggdrasilAccounts.first { $0.name.caseInsensitiveCompare(account.name) == .orderedSame }
+            ?? (yggdrasilAccounts.count == 1 ? yggdrasilAccounts[0] : nil)
+        guard let match, let fallbackURL = match.skinURL else { return displayAccount }
+        return MicrosoftAccount(id: account.id, name: account.name, skinURL: fallbackURL)
+    }
+
     /// 是否处于离线（伪正版）启动模式。
     var isOfflineLaunch: Bool {
         accountInfo(for: activeAccountID)?.offline != nil

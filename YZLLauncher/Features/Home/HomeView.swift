@@ -81,7 +81,8 @@ struct HomeView: View {
             appState.overlay = .account
         } label: {
             ZStack(alignment: .bottomTrailing) {
-                PclAvatarView(size: 140, account: appState.displayAccount)
+                // 微软账号没皮肤时按 PC 端规则借用同名皮肤站账号的材质。
+                PclAvatarView(size: 140, account: appState.displayAccountWithSkinFallback)
                 Image(systemName: "pencil.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(YZLTheme.accent)

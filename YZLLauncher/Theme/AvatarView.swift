@@ -28,12 +28,25 @@ enum SkinTexture {
         }
     }
 
+    /// Mojang 档案返回的贴图地址是 **http://**（明文），iOS 的 ATS 会直接拦截该请求，
+    /// 导致正版登录后皮肤永远加载失败（Windows / Android 无此限制）。
+    /// 已知支持 TLS 的贴图域名统一升级 https；其它皮肤站的 http 地址不动
+    /// （部分 authlib 皮肤站的存储不支持 https，盲目升级反而打不开）。
+    static func upgradedToHTTPS(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == "http" else { return url }
+        let host = url.host?.lowercased() ?? ""
+        let tlsHosts = ["textures.minecraft.net", "storage.littleskin.cn"]
+        guard tlsHosts.contains(host) else { return url }
+        return URL(string: "https://" + url.absoluteString.dropFirst("http://".count)) ?? url
+    }
+
     /// 异步拉取皮肤贴图。裁剪头部需要 UIImage 的像素数据，
     /// 而 AsyncImage 的 phase.image 是 SwiftUI.Image，无法转换为 UIImage。
     /// 这里只走 Mojang 官方贴图地址，不把玩家信息发给第三方头像服务。
     static func load(from url: URL) async -> UIImage? {
+        let upgraded = upgradedToHTTPS(url)
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: upgraded)
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
                 return nil

@@ -456,7 +456,9 @@ struct MicrosoftAuthService {
         let profile = try decode(MinecraftProfile.self, from: data)
         let skinURL = profile.skins?.first(where: { ($0.state ?? "ACTIVE").uppercased() == "ACTIVE" })?.url
             ?? profile.skins?.first?.url
-        return MicrosoftAccount(id: profile.id, name: profile.name, skinURL: skinURL)
+        // Mojang 档案返回 http://textures.minecraft.net，ATS 会拦；入库前统一升级 https。
+        let normalizedSkinURL = skinURL.flatMap(URL.init(string:)).map { SkinTexture.upgradedToHTTPS($0) }?.absoluteString
+        return MicrosoftAccount(id: profile.id, name: profile.name, skinURL: normalizedSkinURL)
     }
 
     // MARK: - HTTP helpers

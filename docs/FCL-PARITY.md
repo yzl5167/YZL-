@@ -18,7 +18,7 @@ FCL（Fold Craft Launcher）是**安卓**平台的 Minecraft Java 版启动器�
 
 | 层 | FCL（Android） | YZL Launcher iOS | 是否对齐 |
 | --- | --- | --- | --- |
-| 界面 | HMCL 风格 / FCL 式主页 | 安卓同款 FCL 式主页、账号卡片、版本主从分栏 | ✅ 已同步 |
+| 界面 | HMCL 风格 / FCL 式主页 | 安卓同款 FCL 式主页 + **同构 5 tab（首页/下载/版本/皮肤/设置）**：独立下载页（三段筛选 + 安装弹层）、本地版本管理页、PCL 风格 2D 主页头像、全局安装进度弹窗、设置页三段下载源 + 清理下载缓存 | ✅ 已同步（2026-11-08） |
 | JVM 后端 | Amethyst-Android（Pojav 系） | **Amethyst-iOS**（同一生态的 iOS 分支，M2-b 待接） | ⚠️ 同宗，未接入 |
 | Java 运行时 | 内置 Java 8/17/21/25 | 待随 Amethyst 内核放入 `java_runtimes/`（M2-b） | ⚠️ 未接入 |
 | 版本安装 | 下载页面选版本 / 加载器 | Mojang 清单 + Fabric / Quilt 加载器（官方 Meta）+ BMCLAPI 镜像 + 分片断点续传 + 整包安装 | ✅ 已实现（Forge/NeoForge 待接） |

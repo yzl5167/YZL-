@@ -165,6 +165,7 @@ struct MicrosoftProfileService {
     }
 
     /// profile 响应解析：skins 里取 state == "ACTIVE" 的 url / variant（SLIM 原样保留）。
+    /// 贴图地址统一升级 https（Mojang 返回 http，ATS 会拦）。
     static func parseProfile(_ data: Data) -> MicrosoftProfile? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -174,7 +175,8 @@ struct MicrosoftProfileService {
         var skinVariant: String?
         if let skins = object["skins"] as? [[String: Any]] {
             let active = skins.first { ($0["state"] as? String)?.uppercased() == "ACTIVE" } ?? skins.first
-            skinURL = active?["url"] as? String
+            skinURL = (active?["url"] as? String).flatMap(URL.init(string:))
+                .map { SkinTexture.upgradedToHTTPS($0) }?.absoluteString
             skinVariant = active?["variant"] as? String
         }
 
@@ -185,7 +187,8 @@ struct MicrosoftProfileService {
                 capes.append(MinecraftCape(
                     id: id,
                     alias: cape["alias"] as? String,
-                    url: cape["url"] as? String,
+                    url: (cape["url"] as? String).flatMap(URL.init(string:))
+                        .map { SkinTexture.upgradedToHTTPS($0) }?.absoluteString,
                     state: (cape["state"] as? String) ?? ""
                 ))
             }

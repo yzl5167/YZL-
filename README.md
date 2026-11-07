@@ -263,6 +263,20 @@ Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（An
 - **测试**：新增 `BrowserLoginFlowTests`（base64url、授权页参数逐项断言 + challenge=sha256(verifier) 验证 + code_verifier 不得出现在 URL、回调解析、自定义 Azure 客户端返回 nil）。
 - **待真机复测**：登录页 → 选账号 → 授权 → 自动换令牌 → 档案；若仍失败，失败页的「复制错误信息」会带上服务端原始错误（现在错误体里也保留了阶段标注）。
 
+### 2026-11-08：UI 对齐 Android 端（5 tab 结构）+ 引擎包重制
+
+对照 Android 端 UI 规格书逐项对齐（构建分两条线：外壳 build-ipa 全绿 run `42424126351`；完整引擎包见下）：
+
+- **5 tab 结构**：侧栏新增「下载」tab（首页/下载/版本/皮肤/设置，对齐 Android 底栏顺序）。原版本页承担的「从清单挑版本」职责移交给新下载页。
+- **新下载页**（`Features/Download/DownloadView.swift`）：搜索 + 三段筛选 Pill **正式版/快照/全部**（`VersionListViewModel.showSnapshots: Bool` 改为 `VersionFilter` 枚举）+ 两列版本卡片网格 + 行尾「最新 {id}」；点卡片弹安装层（`DownloadSheet`）：加载器 segmented **原版/Fabric**（Forge 拦截说明盒）+ Fabric 加载器版本下拉（Meta 拉取，稳定优先）+ 安装说明盒 + 按钮三态（下载并安装 / 补全缺失文件 / 已有安装任务正在进行-禁用）。安装走既有 `prepareInstall` 继承链拍平 + 分片断点续传队列。
+- **版本页重构为本地版本管理**（对齐 Android VersionsScreen）：列表只显示已安装版本（Mojang 清单浏览移去下载页），页头「共 N 个本地版本 · 选中后才能导出或删除」，空态引导去下载页；详情栏保留（安装卡补全 / 导出 / 删除 / 模组 / 单下 jar / 整合包导入入口）。
+- **全局安装弹窗**（`Features/Download/InstallOverlay.swift`，挂 RootView 顶层）：运行中（logo + 进度条 + 文件/字节/速度 + 取消）、成功（successSoft 盒 + 「查看已安装版本」跳版本页）、失败/暂停（错误 + 关闭）四态；运行中不可点外部关闭。主页底部横幅移除（被弹窗替代）。
+- **主页对齐**：大头像换 **PCL 风格 2D 像素合成**（`Theme/PclAvatarView.swift` 逐行对照 Android `PclAvatarRenderer`：脸层 48×48 居中 + 帽层 56×56 覆盖 + `#AEB8C6` 1px 描边、无底板无圆角、最近邻采样）；账号类型文案对齐（微软账号/皮肤站账号/离线账号）；大按钮 300×52；两枚幽灵按钮固定「版本管理 / 下载游戏」（后者跳下载 tab）。
+- **设置页**：下载源升级**三段**（自动/镜像/官方，`DownloadSource` 加 `.auto`，候选序 `MirrorPolicy.candidateOrder`：自动/镜像 → [镜像,官方]，官方 → [官方,镜像]；默认档改「自动」，非法值回退自动）；新增「数据与存储」卡（游戏目录路径 / 已安装版本数 / 下载缓存体积 + **复制游戏目录** + **清理下载缓存**（确认弹窗，`Core/Download/DownloadCache.swift`：分片与断点状态目录 + 版本清单缓存 + 临时导出目录，不动已安装文件/账号/皮肤））；账户卡加当前账号行（头像 + 名 + 类型 + uuid 前 8 位）。
+- **关于页**：新增「特别感谢」卡（PCL / FCL / Amethyst / CmlLib.Core / BMCLAPI / Modrinth / CurseForge / LittleSkin / Mojang 徽标行，配色对齐 Android 端）。
+- **引擎流水线**：`build-engine-ipa.yml` 补声明 `zulu_jre` input（此前被引用但未声明，实验源 C 开不了）；UI 改造推送后触发 Engine baseline——流水线每次 dispatch 都现场检出 main 重编 YZLUI.framework，完整 `YZL-engine.tipa` 自动带上全部新 UI + 登录修复。
+- **测试**：`MirrorPolicyTests` 更新三档断言 + 候选序；新增 `PclAvatarTests`（输出尺寸/描边色/帽层覆盖/64×32 无帽层/归一化——顺带抓出并修掉 toRGBA 正方形上下文破坏 64×32 皮肤的真 bug）；新增 `DownloadCacheTests`（清理只动缓存、pendingBytes 统计、幂等）。
+
 ## 目录结构
 
 ```

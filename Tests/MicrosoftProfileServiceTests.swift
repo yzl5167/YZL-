@@ -52,13 +52,33 @@ final class MicrosoftProfileServiceTests: XCTestCase {
         let data = try XCTUnwrap(json.data(using: .utf8))
 
         let profile = try XCTUnwrap(MicrosoftProfileService.parseProfile(data))
-        XCTAssertEqual(profile.skinURL, "http://textures.minecraft.net/steve.png", "只取 state == ACTIVE 的皮肤")
+        // Mojang 返回 http://textures.minecraft.net，解析时应升级为 https（ATS 拦 http）。
+        XCTAssertEqual(profile.skinURL, "https://textures.minecraft.net/steve.png", "只取 state == ACTIVE 的皮肤")
         XCTAssertEqual(profile.skinVariant, "SLIM")
         XCTAssertEqual(profile.capes.count, 2)
         XCTAssertEqual(profile.capes[0].id, "cape1")
         XCTAssertEqual(profile.capes[0].alias, "Migrator")
         XCTAssertTrue(profile.capes[0].isActive)
         XCTAssertFalse(profile.capes[1].isActive)
+    }
+
+    // MARK: - 贴图地址 https 升级（ATS 拦 http，正版皮肤曾因此永远不显示）
+
+    func testSkinURLUpgradedToHTTPS() throws {
+        let mojang = try XCTUnwrap(URL(string: "http://textures.minecraft.net/texture/abc"))
+        XCTAssertEqual(
+            SkinTexture.upgradedToHTTPS(mojang).absoluteString,
+            "https://textures.minecraft.net/texture/abc"
+        )
+        // LittleSkin 存储支持 TLS，也在白名单内。
+        let littleskin = try XCTUnwrap(URL(string: "http://storage.littleskin.cn/a.png"))
+        XCTAssertEqual(SkinTexture.upgradedToHTTPS(littleskin).scheme, "https")
+        // 其它皮肤的 http 地址不动（部分 authlib 皮肤站存储不支持 https）。
+        let other = try XCTUnwrap(URL(string: "http://skin.example.org/x.png"))
+        XCTAssertEqual(SkinTexture.upgradedToHTTPS(other), other)
+        // https 原样。
+        let already = try XCTUnwrap(URL(string: "https://textures.minecraft.net/a"))
+        XCTAssertEqual(SkinTexture.upgradedToHTTPS(already), already)
     }
 
     func testParseProfileHandlesMissingSections() throws {

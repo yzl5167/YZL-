@@ -434,10 +434,14 @@ struct YggdrasilAuthService {
         let model = skin?.metadata?.model
         // 与 Android 端一致：slim（忽略大小写）→ alex，其余一律 steve。
         let skinModel = (model?.caseInsensitiveCompare("slim") == .orderedSame) ? "alex" : "steve"
+        // 已知支持 TLS 的贴图域名升级 https（Mojang CDN 返回 http，ATS 会拦）。
+        let skinURL = (skin?.url).flatMap(URL.init(string:)).map { SkinTexture.upgradedToHTTPS($0) }?.absoluteString
+        let capeURL = (envelope.textures?["CAPE"]?.url).flatMap(URL.init(string:))
+            .map { SkinTexture.upgradedToHTTPS($0) }?.absoluteString
         return YggdrasilTextures(
-            skinURL: skin?.url,
+            skinURL: skinURL,
             skinModel: skinModel,
-            capeURL: envelope.textures?["CAPE"]?.url
+            capeURL: capeURL
         )
     }
 
