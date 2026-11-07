@@ -40,8 +40,8 @@ final class BrowserLoginFlowTests: XCTestCase {
         XCTAssertEqual(value("response_type"), "code")
         XCTAssertEqual(value("redirect_uri"), MicrosoftAuthService.redirectURI)
         // 浏览器流程的作用域与设备码 / 刷新的 MBI_SSL 不同（Windows 端实测结论）。
-        XCTAssertEqual(value("scope"), MicrosoftAuth.browserScope)
-        XCTAssertEqual(MicrosoftAuth.browserScope, "XboxLive.signin offline_access")
+        XCTAssertEqual(value("scope"), MicrosoftAuthService.browserScope)
+        XCTAssertEqual(MicrosoftAuthService.browserScope, "XboxLive.signin offline_access")
         XCTAssertEqual(value("prompt"), "select_account")
         XCTAssertEqual(value("code_challenge_method"), "S256")
 

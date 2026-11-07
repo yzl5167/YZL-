@@ -7,13 +7,16 @@ final class AuthlibInjectorServiceTests: XCTestCase {
     // MARK: - latest.json 解析
 
     func testParseLatestWithStringSHA256() throws {
-        let data = "{"
-            + "\"build_number\": \"56\", "
-            + "\"version\": \"1.2.8\", "
-            + "\"release_time\": \"2024-01-01T00:00:00\", "
-            + "\"download_url\": \"https://authlib-injector.yushi.moe/artifact/56/authlib-injector-1.2.8.jar\", "
-            + "\"checksums\": {\"sha256\": [\"aabbcc\"]}"
-            + "}".data(using: .utf8)!
+        // 用数组 joined 而不是链式 +：长字符串拼接链会让类型检查器超时。
+        let data = [
+            "{",
+            "\"build_number\": \"56\", ",
+            "\"version\": \"1.2.8\", ",
+            "\"release_time\": \"2024-01-01T00:00:00\", ",
+            "\"download_url\": \"https://authlib-injector.yushi.moe/artifact/56/authlib-injector-1.2.8.jar\", ",
+            "\"checksums\": {\"sha256\": [\"aabbcc\"]}",
+            "}"
+        ].joined().data(using: .utf8)!
 
         let artifact = try XCTUnwrap(AuthlibInjector.parseLatest(data))
         XCTAssertEqual(artifact.version, "1.2.8")
