@@ -28,32 +28,34 @@ jobs:
           set -euo pipefail
           gh run download "${{ inputs.run_id }}" -n engine-build-main -D art --repo "${{ github.repository }}"
           find art -type f -printf '%p %s\n'
-          # 两种安装形态都要中转：TrollStore tipa 和 iOS 18 干净侧载 IPA
-          find art -type f \( -name '*.tipa' -o -name '*sideload-unsigned.ipa' \) | sort > packages.txt
-          test -s packages.txt
-          echo "待中转包："; cat packages.txt
+          TIPA=$(find art -name '*.tipa' | head -1)
+          test -n "$TIPA"
+          echo "TIPA=$TIPA" >> "$GITHUB_ENV"
 
       - name: Upload to public mirrors
         run: |
           set -uo pipefail
-          while IFS= read -r PKG; do
-            [ -f "$PKG" ] || continue
-            NAME=$(basename "$PKG")
-            echo "===== uploading $NAME ====="
-            ls -la "$PKG"
-            echo '--- pixeldrain ---'
-            curl -sS --max-time 900 -T "$PKG" "https://pixeldrain.com/api/file/$NAME" \
-              | tee "pixel-$NAME.json" || true
-            echo '--- gofile ---'
-            curl -sS --max-time 900 -F "file=@$PKG" https://store1.gofile.io/uploadFile \
-              | tee "gofile-$NAME.json" || true
-          done < packages.txt
+          ls -la "$TIPA"
+          echo '--- pixeldrain ---'
+          curl -sS --max-time 900 -T "$TIPA" https://pixeldrain.com/api/file/ | tee pixel.json || true
+          echo '--- filebin ---'
+          BIN="yzl-$(date +%s)"
+          curl -sS --max-time 900 -X POST --data-binary "@$TIPA" \
+            -H "filename: YZL-engine.tipa" -H "Content-Type: application/octet-stream" \
+            "https://filebin.net/$BIN/YZL-engine.tipa" | tee filebin.json || true
+          echo "FILEBIN_BIN=$BIN" >> "$GITHUB_ENV"
+          echo '--- uguu ---'
+          curl -sS --max-time 900 -F "files[]=@$TIPA" "https://uguu.se/upload?output=text" | tee uguu.txt || true
+          echo '--- litterbox (72h) ---'
+          curl -sS --max-time 900 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$TIPA" https://litterbox.catbox.moe/resources/internals/api.php | tee litter.txt || true
+          echo '--- gofile ---'
+          curl -sS --max-time 900 -F "file=@$TIPA" https://store1.gofile.io/uploadFile | tee gofile.json || true
 
       - name: Print links
         if: always()
         run: |
-          echo "包清单："; cat packages.txt 2>/dev/null || true
-          for f in pixel-*.json gofile-*.json; do
+          echo "FILEBIN_BIN=${FILEBIN_BIN:-}"
+          for f in pixel.json filebin.json uguu.txt litter.txt gofile.json; do
             echo "===== $f ====="
             cat "$f" 2>/dev/null || true
             echo

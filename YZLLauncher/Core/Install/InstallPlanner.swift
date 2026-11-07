@@ -171,18 +171,25 @@ enum InstallPlanner {
         )
     }
 
-    private static func makeSpec(id: String, url: URL, destination: URL, sha1: String?, size: Int64?) -> DownloadSpec {
+    /// 生成带双源镜像改写的下载 spec。整合包导入器（ModpackImporter）也用它，
+    /// 保证 mods 下载与官方文件走同一条「主源 → 备用源 + 分片参数」的规则。
+    static func makeSpec(id: String, url: URL, destination: URL, sha1: String?, size: Int64?) -> DownloadSpec {
         // 下载源统一在生成 spec 时改写：客户端 jar / 库 / 资源对象分别来自
         // piston-data、libraries.minecraft.net（或 maven）、resources.download.minecraft.net，
-        // 全部命中 MirrorPolicy 的映射表。
+        // 全部命中 MirrorPolicy 的映射表。主源与备用源同时带上，下载失败自动换源。
         let bytes = size ?? 0
+        let active = MirrorPolicy.current
+        let alternate: DownloadSource = active == .mirror ? .official : .mirror
+        let primary = MirrorPolicy.rewrite(url, source: active)
+        let fallback = MirrorPolicy.rewrite(url, source: alternate)
         return DownloadSpec(
             id: id,
-            url: MirrorPolicy.rewrite(url),
+            url: primary,
+            fallbackURL: fallback == primary ? nil : fallback,
             destination: destination,
             expectedSHA1: sha1,
             expectedSize: size,
-            segmentSize: 1_048_576,
+            segmentSize: bytes > 16_777_216 ? 2_097_152 : 1_048_576,
             maxConnections: bytes > smallFileThreshold ? 8 : 1
         )
     }

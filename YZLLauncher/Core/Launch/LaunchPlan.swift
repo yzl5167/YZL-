@@ -71,7 +71,8 @@ enum LaunchPlanBuilder {
                       accessToken: String,
                       memoryMB: Int,
                       maxHeapMB: Int = 4096,
-                      userType: String = "msa") throws -> LaunchPlan {
+                      userType: String = "msa",
+                      authlibArguments: [String] = []) throws -> LaunchPlan {
         guard let rawMainClass = detail.mainClass?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawMainClass.isEmpty else {
@@ -126,6 +127,9 @@ enum LaunchPlanBuilder {
         // 版本自带的 JVM 参数（如 -Xss1M、-Djava.library.path 等）追加在堆参数之后，
         // 其中的 ${classpath} 由 ArgumentResolver 剥离，最终由 LaunchCommand 用 -cp 统一注入。
         jvmArguments.append(contentsOf: ArgumentResolver.jvmArguments(version: detail, context: resolverContext))
+        // 皮肤站账号：authlib-injector 的 -javaagent / -Dauthlibinjector.side（见 AuthlibInjector）。
+        // -javaagent 放在 -cp 之前符合 JVM 语义；fork 引擎路径由 YZLEngineHost 显式转发。
+        jvmArguments.append(contentsOf: authlibArguments)
 
         // 游戏参数优先用版本 JSON 自带的 arguments / minecraftArguments；都没有则回退到内置集。
         let gameArguments = ArgumentResolver.gameArguments(version: detail, context: resolverContext)

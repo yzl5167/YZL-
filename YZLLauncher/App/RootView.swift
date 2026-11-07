@@ -80,76 +80,73 @@ private struct YZLSidebar: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        VStack(spacing: 0) {
-            brand
-                .padding(.top, 16)
-                .padding(.bottom, 18)
+        GeometryReader { proxy in
+            // iPhone 横屏可用高度只有 320–390pt：品牌 + 4 个导航 + 账号 + 关于
+            // 一共接近 470pt，旧布局会把最上面的「YZL」挤出屏幕。
+            // 小屏切紧凑尺寸，中间导航改成可滚动，品牌和底部入口永远可见。
+            let compact = proxy.size.height < 430
 
-            VStack(spacing: 4) {
-                railButton(icon: "house.fill", label: "首页", tab: .home)
-                railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions)
-                railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin)
-                railButton(icon: "gearshape.fill", label: "设置", tab: .settings)
-            }
+            VStack(spacing: 0) {
+                brand(compact: compact)
+                    .padding(.top, compact ? 8 : 14)
+                    .padding(.bottom, compact ? 8 : 14)
 
-            Spacer(minLength: 12)
-
-            accountButton
-                .padding(.bottom, 8)
-
-            Button {
-                appState.overlay = .about
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .frame(width: 44, height: 30)
-                    Text("关于")
-                        .font(.system(size: 10, weight: .medium))
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: compact ? 2 : 4) {
+                        railButton(icon: "house.fill", label: "首页", tab: .home, compact: compact)
+                        railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions, compact: compact)
+                        railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin, compact: compact)
+                        railButton(icon: "gearshape.fill", label: "设置", tab: .settings, compact: compact)
+                    }
+                    .padding(.vertical, 1)
                 }
-                .foregroundStyle(appState.overlay == .about ? YZLTheme.accent : YZLTheme.muted)
-                .frame(width: 64)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(appState.overlay == .about ? YZLTheme.accentSoft : Color.clear)
-                )
+                .frame(maxHeight: .infinity)
+
+                accountButton(compact: compact)
+                    .padding(.bottom, compact ? 2 : 6)
+
+                aboutButton(compact: compact)
+                    .padding(.bottom, compact ? 8 : 14)
             }
-            .buttonStyle(.plain)
-            .padding(.bottom, 14)
+            .frame(width: 84)
+            .frame(maxHeight: .infinity)
         }
         .frame(width: 84)
-        .frame(maxHeight: .infinity)
         // 固定横屏时 safe area 主要落在 leading/trailing（刘海侧）与 bottom，
         // 只忽略 top/bottom 会让白色侧栏铺不到左右边缘，露出一条底色。
         .background(Color.white.ignoresSafeArea())
     }
 
-    private var brand: some View {
-        VStack(spacing: 5) {
-            YzlLogoMark(size: 42)
+    private func brand(compact: Bool) -> some View {
+        VStack(spacing: compact ? 3 : 5) {
+            YzlLogoMark(size: compact ? 34 : 42)
             Text("YZL")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(YZLTheme.muted)
+                .font(.system(size: compact ? 9.5 : 10.5, weight: .semibold))
+                .foregroundStyle(YZLTheme.text.opacity(0.72))
+                .lineLimit(1)
+                .fixedSize()
         }
+        .accessibilityLabel("YZL Launcher")
     }
 
-    private func railButton(icon: String, label: String, tab: AppTab) -> some View {
+    private func railButton(icon: String, label: String, tab: AppTab, compact: Bool) -> some View {
         let selected = appState.selectedTab == tab && appState.overlay == nil
         return Button {
             appState.overlay = nil
             appState.selectedTab = tab
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: compact ? 3 : 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 20, weight: .medium))
-                    .frame(width: 44, height: 30)
+                    .font(.system(size: compact ? 18 : 20, weight: .medium))
+                    .frame(width: 44, height: compact ? 26 : 30)
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: compact ? 9.5 : 10, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(selected ? YZLTheme.accent : YZLTheme.muted)
             .frame(width: 64)
-            .padding(.vertical, 5)
+            .padding(.vertical, compact ? 4 : 5)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(selected ? YZLTheme.accentSoft : Color.clear)
@@ -158,24 +155,49 @@ private struct YZLSidebar: View {
         .buttonStyle(.plain)
     }
 
-    private var accountButton: some View {
+    private func accountButton(compact: Bool) -> some View {
         Button {
             appState.overlay = .account
         } label: {
-            VStack(spacing: 4) {
-                AvatarView(size: 38, account: appState.displayAccount)
+            VStack(spacing: compact ? 3 : 4) {
+                AvatarView(size: compact ? 32 : 38, account: appState.displayAccount)
 
                 Text(appState.displayAccount?.name ?? "未登录")
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: compact ? 9 : 9.5, weight: .medium))
                     .foregroundStyle(appState.overlay == .account ? YZLTheme.accentText : YZLTheme.muted)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .minimumScaleFactor(0.8)
                     .frame(width: 64)
             }
-            .padding(.vertical, 5)
+            .padding(.vertical, compact ? 4 : 5)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(appState.overlay == .account ? YZLTheme.accentSoft : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func aboutButton(compact: Bool) -> some View {
+        Button {
+            appState.overlay = .about
+        } label: {
+            VStack(spacing: compact ? 3 : 4) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: compact ? 18 : 20, weight: .medium))
+                    .frame(width: 44, height: compact ? 26 : 30)
+                Text("关于")
+                    .font(.system(size: compact ? 9.5 : 10, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(appState.overlay == .about ? YZLTheme.accent : YZLTheme.muted)
+            .frame(width: 64)
+            .padding(.vertical, compact ? 4 : 5)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(appState.overlay == .about ? YZLTheme.accentSoft : Color.clear)
             )
         }
         .buttonStyle(.plain)

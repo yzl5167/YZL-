@@ -1,10 +1,13 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct VersionsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = VersionListViewModel()
     @State private var selectedVersion: MinecraftVersion?
     @State private var searchText = ""
+    @State private var showModpackPicker = false
+    @State private var pickedModpackURL: URL?
 
     var body: some View {
         ZStack {
@@ -37,6 +40,25 @@ struct VersionsView: View {
                 selectedVersion = appState.selectedVersion ?? listedVersions.first
             }
         }
+        .sheet(isPresented: $showModpackPicker) {
+            ModpackFilePicker { url in
+                pickedModpackURL = url
+            }
+            .ignoresSafeArea()
+        }
+        .sheet(isPresented: Binding(
+            get: { pickedModpackURL != nil },
+            set: { if !$0 { pickedModpackURL = nil } }
+        )) {
+            if let pickedModpackURL {
+                ModpackImportSheet(
+                    queue: appState.installQueue,
+                    zipURL: pickedModpackURL,
+                    onFinished: { self.pickedModpackURL = nil }
+                )
+                .environmentObject(appState)
+            }
+        }
     }
 
     private var pageHeader: some View {
@@ -50,6 +72,14 @@ struct VersionsView: View {
                     .foregroundStyle(YZLTheme.muted)
             }
             Spacer()
+            Button {
+                showModpackPicker = true
+            } label: {
+                Text("导入整合包")
+            }
+            .buttonStyle(PrimaryButtonStyle(prominent: false))
+            .frame(width: 106)
+
             Button {
                 Task { await viewModel.reload() }
             } label: {
@@ -145,7 +175,7 @@ struct VersionsView: View {
     private var content: some View {
         if viewModel.isLoading && viewModel.versions.isEmpty {
             loadingView
-        } else if let error = viewModel.errorMessage, viewModel.versions.isEmpty {
+        } else if let error = viewModel.errorMessage, listedVersions.isEmpty {
             errorView(message: error)
         } else if searched.isEmpty {
             emptySearchView
@@ -233,6 +263,27 @@ struct VersionsView: View {
 
     private var versionList: some View {
         List {
+            if let error = viewModel.errorMessage {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("版本清单刷新失败，当前显示本地已安装版本", systemImage: "wifi.exclamationmark")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(YZLTheme.warningText)
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundStyle(YZLTheme.muted)
+                            .lineLimit(3)
+                        Button("重试") {
+                            Task { await viewModel.reload() }
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(YZLTheme.accent)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .listRowBackground(YZLTheme.warningSoft)
+            }
+
             ForEach(searched) { version in
                 Button {
                     selectedVersion = version
@@ -360,6 +411,10 @@ private struct VersionDetailPane: View {
                 if isVanillaVersion {
                     FabricInstallCardView(baseVersion: version, queue: installQueue)
                 }
+                if appState.isInstalled(version.id) {
+                    installedActionsCard
+                    modsCard
+                }
                 downloadCard
                 infoCard
                 noteCard
@@ -468,6 +523,142 @@ private struct VersionDetailPane: View {
                 Divider()
                 infoRow("资源来源", "Mojang 官方")
             }
+        }
+    }
+
+    // MARK: - 已安装版本管理（导出 / 删除，对照 Android 端版本页操作条）
+
+    @State private var isExporting = false
+    @State private var exportMessage: String?
+    @State private var exportDocument: ZipExportDocument?
+    @State private var exportFileName = ""
+    @State private var showFileExporter = false
+    @State private var showDeleteConfirm = false
+    @State private var showModLibrary = false
+
+    /// 模组管理卡：整合包场景下开关 / 删除模组是最常用的操作。
+    private var modsCard: some View {
+        YZLCard(padding: 14) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("模组")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(YZLTheme.text)
+                    Text(modsSummary)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Button("管理模组") {
+                    showModLibrary = true
+                }
+                .buttonStyle(PrimaryButtonStyle(prominent: false))
+            }
+        }
+        .sheet(isPresented: $showModLibrary) {
+            ModLibrarySheet(gameDirectory: InstallLayout.forVersion(version.id).gameDirectory)
+        }
+    }
+
+    private var modsSummary: String {
+        let mods = MobileCompat.listMods(in: InstallLayout.forVersion(version.id).gameDirectory)
+        guard !mods.isEmpty else {
+            return "没有模组。导入整合包或在 game/mods 里放 jar 后会出现在这里。"
+        }
+        let enabled = mods.filter(\.isEnabled).count
+        let bytes = mods.reduce(Int64(0)) { $0 + $1.size }
+        return "\(mods.count) 个模组（启用 \(enabled) · 关闭 \(mods.count - enabled)）· \(formatBytes(bytes))"
+    }
+
+    private var installedActionsCard: some View {
+        YZLCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("版本管理")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                Text("导出成 ZIP 整合包（含 yzl.modpack.json 与 PCL 兼容标记），可与 PCL / YZL 安卓端互通；mods 与存档一并打包，依赖库与资源由接收方重新下载。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+
+                HStack(spacing: 10) {
+                    Button {
+                        startExport()
+                    } label: {
+                        Label(isExporting ? "正在打包…" : "导出 ZIP", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: true))
+                    .disabled(isExporting)
+
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("删除版本", systemImage: "trash")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                }
+
+                if let message = exportMessage {
+                    Text(message)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.text)
+                        .lineSpacing(3)
+                }
+            }
+        }
+        .confirmationDialog(
+            "删除 \(version.id)？",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除版本", role: .destructive) {
+                appState.removeInstalledVersion(id: version.id)
+                exportMessage = nil
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删除这个版本目录里的全部内容（版本 JSON、客户端 jar、模组、存档与资源），无法恢复；以后想玩需要重新完整安装。")
+        }
+        .fileExporter(
+            isPresented: $showFileExporter,
+            document: exportDocument,
+            contentType: .zip,
+            defaultFilename: exportFileName,
+            onCompletion: { result in
+                switch result {
+                case .success:
+                    exportMessage = "导出完成。"
+                case .failure(let error):
+                    exportMessage = "导出失败：\(error.localizedDescription)"
+                }
+                exportDocument = nil
+            }
+        )
+    }
+
+    /// 先在 tmp 里打包（可能要几秒，期间按钮禁用），打包完成后弹系统文件面板选目的地。
+    private func startExport() {
+        guard !isExporting else { return }
+        isExporting = true
+        exportMessage = nil
+        let versionID = version.id
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YZLExport-\(UUID().uuidString)")
+            .appendingPathComponent(VersionExporter.suggestedName(for: versionID))
+
+        Task { @MainActor in
+            do {
+                let result = try VersionExporter.export(versionID: versionID, to: destination)
+                exportDocument = ZipExportDocument(sourceURL: destination)
+                exportFileName = VersionExporter.suggestedName(for: versionID)
+                showFileExporter = true
+                exportMessage = "打包完成：\(result.fileCount) 个文件 · \(formatBytes(result.totalBytes))，请在弹出的面板里选择保存位置。"
+            } catch {
+                exportMessage = "打包失败：\(error.localizedDescription)"
+            }
+            isExporting = false
         }
     }
 
@@ -637,5 +828,28 @@ private struct VersionDetailPane: View {
                 .foregroundStyle(YZLTheme.text)
                 .lineLimit(1)
         }
+    }
+}
+
+// MARK: - 导出文件包装
+
+/// `.fileExporter` 的文档载体：打包已在 tmp 完成，这里只负责把现成的 zip 复制到用户选的位置。
+/// `init(configuration:)` 仅为满足 FileDocument 协议（本流程从不读入）。
+private struct ZipExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.zip] }
+
+    let sourceURL: URL
+
+    init(sourceURL: URL) {
+        self.sourceURL = sourceURL
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        // 只用于写出；占位指向临时目录，读入路径在本流程中不会被触发。
+        sourceURL = FileManager.default.temporaryDirectory
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        try FileWrapper(url: sourceURL, options: .immediate)
     }
 }

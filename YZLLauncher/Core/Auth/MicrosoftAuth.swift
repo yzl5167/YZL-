@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 
 struct MicrosoftAccount: Codable, Identifiable, Equatable {
     let id: String
@@ -143,19 +144,66 @@ struct MicrosoftAuthService {
             : "https://login.microsoftonline.com/consumers/oauth2/v2.0/token")!
     }
 
+    /// 浏览器授权码流的一次登录会话：授权页地址 + PKCE 校验对。
+    /// 换令牌时必须带上同一个 code_verifier。
+    struct BrowserLoginSession {
+        let url: URL
+        let codeVerifier: String
+    }
+
+    /// 浏览器流程的作用域。注意与设备码 / 刷新用的 MsaScope 不同：
+    /// Windows 端 2026-10 实测结论——授权码流程必须带 PKCE + prompt=select_account，
+    /// scope 用 `XboxLive.signin offline_access`；MBI_SSL 只用于设备码申请与令牌刷新
+    /// （微软对第一方应用强制预授权作用域，混用会被拒）。
+    static let browserScope = "XboxLive.signin offline_access"
+
     /// Live Connect v1.0 授权码流登录页。设备码端点虽然也会发 code，但用户授权后
     /// token 端点会返回 interaction_required（MSA v1.0 客户端不在 AAD 目录），
     /// 因此默认客户端必须走这里。
-    var authorizationURL: URL? {
+    ///
+    /// 参数与 Windows 端 MicrosoftAuth.StartLogin（v2.3.8.1 已实跑验证）逐项一致：
+    /// PKCE S256 + state + prompt=select_account + browserScope。
+    /// state 只用于微软侧会话绑定，回调在 App 内 WebView 拦截、不经过外部重定向，
+    /// 因此不做回传校验。
+    func makeBrowserLogin() -> BrowserLoginSession? {
         guard usesLiveConnect else { return nil }
+
+        let verifierBytes = Self.randomBytes(count: 32)
+        let codeVerifier = Self.base64URL(verifierBytes)
+        let challenge = Self.base64URL(Data(SHA256.hash(data: Data(codeVerifier.utf8))))
+        let state = Self.base64URL(Self.randomBytes(count: 8))
+
         var components = URLComponents(string: "https://login.live.com/oauth20_authorize.srf")
         components?.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: scope),
-            URLQueryItem(name: "redirect_uri", value: Self.redirectURI)
+            URLQueryItem(name: "redirect_uri", value: Self.redirectURI),
+            URLQueryItem(name: "scope", value: Self.browserScope),
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "prompt", value: "select_account"),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
-        return components?.url
+        guard let url = components?.url else { return nil }
+        return BrowserLoginSession(url: url, codeVerifier: codeVerifier)
+    }
+
+    private static func randomBytes(count: Int) -> Data {
+        var bytes = [UInt8](repeating: 0, count: count)
+        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        if status != errSecSuccess {
+            // 系统随机源失败时退回 CryptoKit 随机数（登录流程不应因此崩掉）。
+            return Data((0..<count).map { _ in UInt8.random(in: .min ... .max) })
+        }
+        return Data(bytes)
+    }
+
+    /// PKCE / state 用的 base64url（无填充）。
+    static func base64URL(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     /// 解析 `oauth20_desktop.srf` 回调；非回调地址返回 nil，WebView 照常加载。
@@ -275,9 +323,12 @@ struct MicrosoftAuthService {
     }
 
     /// v1.0 授权码 → 访问令牌。与设备码流共用同一个 token 端点，
-    /// 只是 grant_type 换成 authorization_code，并带上微软登记的 redirect_uri。
-    func exchangeAuthorizationCode(_ code: String) async throws -> OAuthToken {
+    /// 但按 Windows 端实测：scope 用 browserScope（与授权页一致），并带 PKCE code_verifier。
+    func exchangeAuthorizationCode(_ code: String, codeVerifier: String) async throws -> OAuthToken {
         try validateClientId()
+        guard !codeVerifier.isEmpty else {
+            throw MicrosoftAuthError.oauth("登录会话状态丢失（缺少 PKCE 校验对），请重新发起登录。")
+        }
 
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
@@ -285,9 +336,10 @@ struct MicrosoftAuthService {
         request.httpBody = formBody([
             "client_id": clientId,
             "code": code,
+            "code_verifier": codeVerifier,
             "grant_type": "authorization_code",
             "redirect_uri": Self.redirectURI,
-            "scope": scope
+            "scope": Self.browserScope
         ])
 
         let (data, response) = try await send(request)

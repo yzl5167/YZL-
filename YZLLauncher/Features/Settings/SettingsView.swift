@@ -1,10 +1,27 @@
 import SwiftUI
 
+/// 设置页测速的一次结果；`summaryText` 直接喂给 infoRow。
+private struct SourceProbeOutcome: Identifiable {
+    let source: DownloadSource
+    let ok: Bool
+    let milliseconds: Int
+
+    var id: String { source.rawValue }
+
+    var summaryText: String {
+        ok ? "✓ \(milliseconds) ms" : "✗ \(milliseconds) ms"
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("memoryMB") private var memoryMB: Double = 2048
     @AppStorage(MicrosoftAuth.clientIdKey) private var clientId = MicrosoftAuth.defaultClientId
     @AppStorage(MirrorPolicy.storageKey) private var downloadSource = DownloadSource.mirror.rawValue
+    @AppStorage(MobileCompat.Settings.enabledKey) private var compatEnabled = true
+    @AppStorage(MobileCompat.Settings.aggressiveKey) private var compatAggressive = false
+    @State private var isProbingSources = false
+    @State private var sourceProbeResults: [SourceProbeOutcome] = []
 
     var body: some View {
         ZStack {
@@ -14,6 +31,7 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     accountCard
                     launchCard
+                    compatCard
                     downloadCard
                     diagnosticsCard
                     aboutCard
@@ -36,6 +54,8 @@ struct SettingsView: View {
 
     /// 下载源切换（对照 Android / Windows 端的「下载源」设置）。
     /// 清单、版本详情、加载器 Meta、依赖库与资源对象的请求都会按这里的选择改写。
+    /// 「测速」探测两个源的版本清单，结果写入会话内的 SourceHealth 记录，
+    /// 之后失败过的源在候选排序里自动靠后（对照 Android 端 SourceHealth）。
     private var downloadCard: some View {
         YZLCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -54,8 +74,72 @@ struct SettingsView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
+
+                HStack(spacing: 10) {
+                    Button {
+                        runSourceProbe()
+                    } label: {
+                        Text(isProbingSources ? "正在测速…" : "测速")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .disabled(isProbingSources)
+
+                    Button {
+                        SourceHealth.shared.reset()
+                        sourceProbeResults = []
+                    } label: {
+                        Text("清空记录")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .disabled(isProbingSources)
+                }
+
+                ForEach(sourceProbeResults) { result in
+                    infoRow(result.source.displayName, result.summaryText)
+                }
+
+                if !sourceProbeResults.isEmpty {
+                    Text("测速会各请求一次版本清单。失败过的源会记入本次会话的健康记录，整包安装时自动排到候选最后。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineSpacing(3)
+                }
             }
         }
+    }
+
+    private func runSourceProbe() {
+        isProbingSources = true
+        sourceProbeResults = []
+        Task { @MainActor in
+            // 两个源并发探测，各自只有一次 GET，总耗时约等于最慢的那个。
+            async let official = SourceHealth.probe(sourceProbeURL(for: .official))
+            async let mirror = SourceHealth.probe(sourceProbeURL(for: .mirror))
+            let officialResult = await official
+            let mirrorResult = await mirror
+
+            let results: [SourceProbeOutcome] = [
+                SourceProbeOutcome(source: .official, ok: officialResult.ok, milliseconds: officialResult.milliseconds),
+                SourceProbeOutcome(source: .mirror, ok: mirrorResult.ok, milliseconds: mirrorResult.milliseconds)
+            ]
+            for result in results {
+                let url = sourceProbeURL(for: result.source)
+                if result.ok {
+                    SourceHealth.shared.recordSuccess(url)
+                } else {
+                    SourceHealth.shared.recordFailure(url)
+                }
+            }
+            sourceProbeResults = results
+            isProbingSources = false
+        }
+    }
+
+    /// 测速端点：版本清单是最能代表「这条源现在通不通」的地址。
+    /// 地址统一从官方清单 URL 经 MirrorPolicy.rewrite 得出，不在此处手拼镜像域名。
+    private func sourceProbeURL(for source: DownloadSource) -> URL {
+        let official = URL(string: "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")!
+        return MirrorPolicy.rewrite(official, source: source)
     }
 
     private var pageHeader: some View {
@@ -129,10 +213,58 @@ struct SettingsView: View {
                 Slider(value: $memoryMB, in: 1024...4096, step: 512)
                     .tint(YZLTheme.accent)
 
-                Text("游戏内存。启动自检会读取这个值并生成 -Xmx 参数；iPhone 建议先取 1024–2048 MB，超过设备限制会被系统终止。")
+                Text("游戏内存。启动前会把这个值真正写进引擎的堆设置（-Xmx），不是只显示在自检里。几百个模组的整合包建议 3072–4096 MB；超过本机安全上限会自动夹住。")
                     .font(.system(size: 10))
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
+            }
+        }
+    }
+
+    /// 移动端兼容：把「PC 上 PCL 能进、手机上卡在正在加载地形」这件事做成两个开关。
+    /// 默认开启，进游戏前自动执行；设置页可以手动立刻跑一次并看到逐条结果。
+    private var compatCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("iPhone 兼容")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                Toggle("启动前自动做移动端适配", isOn: $compatEnabled)
+                    .font(.system(size: 12))
+                    .tint(YZLTheme.accent)
+
+                Toggle("极端兼容：关掉 Sodium 渲染组", isOn: $compatAggressive)
+                    .font(.system(size: 12))
+                    .tint(YZLTheme.accent)
+
+                Text("适配会关掉 Iris 光影、把 Sodium 的高级 staging buffer 降级，并把视图距离、云层、生物群系过渡压到手机档位——这三样正是「卡在正在加载地形」最常见的成因。极端兼容再把 Sodium / Indium / Reese's 移出 mods（放进 mods-ios-off），画面朴素但换渲染器也不至于进不去。所有改动前都会备份到 .yzl-compat-backup。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+
+                HStack(spacing: 10) {
+                    Button {
+                        appState.applyMobileCompatNow()
+                    } label: {
+                        Text("立即处理当前版本")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: true))
+
+                    Button {
+                        appState.restoreMobileCompat()
+                    } label: {
+                        Text("恢复原样")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                }
+
+                if !appState.compatStatus.isEmpty {
+                    Text(appState.compatStatus)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.text)
+                        .lineSpacing(3)
+                }
             }
         }
     }

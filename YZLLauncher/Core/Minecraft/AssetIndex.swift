@@ -49,26 +49,54 @@ struct AssetIndexService {
         let active = MirrorPolicy.current
         let alternate: DownloadSource = active == .mirror ? .official : .mirror
         let candidates = Self.candidateURLs(for: indexURL, sources: [active, alternate])
-        var lastReason = "未知错误"
+        var reasons: [String] = []
 
-        for url in candidates {
-            for attempt in 1...Self.attemptsPerSource {
-                do {
-                    let (data, document) = try await fetchOnce(url)
-                    if let cacheURL {
-                        writeCache(data, to: cacheURL)
-                    }
-                    return document
-                } catch {
-                    lastReason = "\(url.host ?? "未知源")：\(error.localizedDescription)"
-                    if attempt < Self.attemptsPerSource {
-                        try? await Task.sleep(nanoseconds: UInt64(attempt) * 400_000_000)
-                    }
+        // 镜像与官方同时起跑：索引只有一条路径能通时，用户也不必等前一条超时。
+        let fetched: (Data, AssetIndexDocument)? = await withTaskGroup(
+            of: Result<(Data, AssetIndexDocument), Error>.self
+        ) { group in
+            for url in candidates {
+                group.addTask {
+                    await self.fetchWithRetry(url)
+                }
+            }
+
+            while let result = await group.next() {
+                switch result {
+                case .success(let pair):
+                    group.cancelAll()
+                    return pair
+                case .failure(let error):
+                    reasons.append(error.localizedDescription)
+                }
+            }
+            return nil
+        }
+
+        if let (data, document) = fetched {
+            if let cacheURL {
+                writeCache(data, to: cacheURL)
+            }
+            return document
+        }
+
+        throw VersionServiceError.assetIndexUnavailable(reasons.joined(separator: "；"))
+    }
+
+    private func fetchWithRetry(_ url: URL) async -> Result<(Data, AssetIndexDocument), Error> {
+        var lastReason = "\(url.host ?? "未知源")：未知错误"
+        for attempt in 1...Self.attemptsPerSource {
+            do {
+                let pair = try await fetchOnce(url)
+                return .success(pair)
+            } catch {
+                lastReason = "\(url.host ?? "未知源")：\(error.localizedDescription)"
+                if attempt < Self.attemptsPerSource {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 300_000_000)
                 }
             }
         }
-
-        throw VersionServiceError.assetIndexUnavailable(lastReason)
+        return .failure(VersionServiceError.assetIndexUnavailable(lastReason))
     }
 
     /// 候选地址：当前源优先、备用源兜底，地址相同（例如索引只走官方）时去重。

@@ -45,6 +45,9 @@ final class AppState: ObservableObject {
 
     /// 离线（伪正版）账号列表：不需要微软令牌，单人 / LAN 直接进入游戏。
     @Published var offlineAccounts: [OfflineAccount] = []
+    /// 皮肤站账号列表（Yggdrasil 协议，对照 Android 端 littleskin 类型）：
+    /// 档案存磁盘 JSON，accessToken / clientToken 按账号 id 存 Keychain。
+    @Published var yggdrasilAccounts: [YggdrasilAccount] = []
     /// 当前用于显示与启动的账号 id（正版或离线）。nil 表示未选择任何账号。
     @Published var activeAccountID: String?
     @Published var jitStatus: JITStatus = .unknown
@@ -61,6 +64,8 @@ final class AppState: ObservableObject {
     @Published var launchChecks: [LaunchCheck] = []
     @Published var launchPlanSummary: String?
     @Published var launchErrorMessage: String?
+    /// 最近一次移动端适配的结果（设置页展示，逐条人话）。
+    @Published var compatStatus: String = ""
 
     /// 主页「下载游戏」把用户送到版本页后，用这个 id 自动开始安装。
     @Published var pendingInstallVersionID: String?
@@ -78,6 +83,8 @@ final class AppState: ObservableObject {
     private var authTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
     private var launchTask: Task<Void, Never>?
+    /// 浏览器授权码流的 PKCE 校验对：发起登录时生成，换令牌时消费。
+    private var pendingCodeVerifier: String?
 
     private static let selectedVersionKey = "yzl.selectedVersion"
     private static let activeAccountKey = "yzl.activeAccount"
@@ -105,6 +112,7 @@ final class AppState: ObservableObject {
         // 若在 account 仍为 nil 时调用 restoreActiveAccount()，持久化的正版 id
         // 会被误判为无效并覆盖成第一个离线账号，冷启动后正版选择就丢了。
         offlineAccounts = OfflineAccountStore().load()
+        yggdrasilAccounts = YggdrasilAccountStore().load()
 
         guard let stored = sessionStore.load() else {
             restoreActiveAccount()
@@ -162,11 +170,13 @@ final class AppState: ObservableObject {
             // `00000000402b5328` 是 MSA v1.0 原生客户端，不在 Azure AAD 目录，
             // 设备码端点虽能发 code，但用户授权后 token 端点会返回
             // interaction_required。默认客户端必须走 v1.0 授权码 + 网页登录。
-            guard let url = service.authorizationURL else {
+            // 参数对齐 Windows 端实测可用流程（PKCE + prompt=select_account）。
+            guard let login = service.makeBrowserLogin() else {
                 authPhase = .failed("无法生成微软登录页地址，请检查设置里的客户端 ID。")
                 return
             }
-            authPhase = .browser(url)
+            pendingCodeVerifier = login.codeVerifier
+            authPhase = .browser(login.url)
             return
         }
 
@@ -200,6 +210,10 @@ final class AppState: ObservableObject {
     /// WebView 拦到 `oauth20_desktop.srf?code=...` 后进入这里。
     func completeBrowserSignIn(code: String) {
         guard !code.isEmpty else { return }
+        guard let verifier = pendingCodeVerifier else {
+            authPhase = .failed("登录会话状态丢失（没有找到 PKCE 校验对），请关闭本页重新发起登录。\n登录分支：Live Connect v1.0（网页授权码）")
+            return
+        }
         authPhase = .exchanging
         let service = MicrosoftAuthService(clientId: MicrosoftAuth.clientId)
         authTask?.cancel()
@@ -207,7 +221,7 @@ final class AppState: ObservableObject {
             guard let self = self else { return }
             var stage = "换取微软访问令牌"
             do {
-                let token = try await service.exchangeAuthorizationCode(code)
+                let token = try await service.exchangeAuthorizationCode(code, codeVerifier: verifier)
                 stage = "换取 Xbox / Minecraft 令牌"
                 let session = try await service.makeSession(from: token)
                 try Task.checkCancellation()
@@ -219,6 +233,7 @@ final class AppState: ObservableObject {
             } catch {
                 self.authPhase = .failed("\(stage)：\(error.localizedDescription)\n登录分支：Live Connect v1.0（网页授权码）")
             }
+            self.pendingCodeVerifier = nil
             self.authTask = nil
         }
     }
@@ -238,6 +253,7 @@ final class AppState: ObservableObject {
     func cancelSignIn() {
         authTask?.cancel()
         authTask = nil
+        pendingCodeVerifier = nil
         authPhase = .idle
         isAuthSheetVisible = false
     }
@@ -250,27 +266,33 @@ final class AppState: ObservableObject {
         session = nil
         account = nil
         authPhase = .idle
-        // 退出正版后若当前正用它启动，则自动退到离线账号（若有）。
+        // 退出正版后若当前正用它启动，则自动退到其它账号（离线 / 皮肤站）。
         if activeAccountID == microsoftID {
-            activeAccountID = offlineAccounts.first?.id
+            activeAccountID = offlineAccounts.first?.id ?? yggdrasilAccounts.first?.id
             persistActiveAccount()
         }
     }
 
-    // MARK: - 统一账号（正版 / 离线）
+    // MARK: - 统一账号（正版 / 皮肤站 / 离线）
 
-    /// 把 `activeAccountID` 解析成具体的正版或离线档案；解析不到返回 nil。
-    private func accountInfo(for id: String?) -> (microsoft: MicrosoftAccount?, offline: OfflineAccount?)? {
+    /// 把 `activeAccountID` 解析成具体的正版 / 皮肤站 / 离线档案；解析不到返回 nil。
+    private func accountInfo(for id: String?) -> (microsoft: MicrosoftAccount?, yggdrasil: YggdrasilAccount?, offline: OfflineAccount?)? {
         guard let id else { return nil }
-        if let acc = account, acc.id == id { return (acc, nil) }
-        if let off = offlineAccounts.first(where: { $0.id == id }) { return (nil, off) }
+        if let acc = account, acc.id == id { return (acc, nil, nil) }
+        if let skin = yggdrasilAccounts.first(where: { $0.id == id }) { return (nil, skin, nil) }
+        if let off = offlineAccounts.first(where: { $0.id == id }) { return (nil, nil, off) }
         return nil
     }
 
-    /// 用于头像 / 名字展示：正版优先，否则退到离线账号。
+    /// 用于头像 / 名字展示：正版优先，其次皮肤站，再退到离线账号。
     var displayAccount: MicrosoftAccount? {
         guard let info = accountInfo(for: activeAccountID) else { return nil }
-        return info.microsoft ?? info.offline?.asMicrosoftAccount
+        return info.microsoft ?? info.yggdrasil?.asMicrosoftAccount ?? info.offline?.asMicrosoftAccount
+    }
+
+    /// 当前选中的皮肤站账号（若有）。
+    var activeYggdrasilAccount: YggdrasilAccount? {
+        accountInfo(for: activeAccountID)?.yggdrasil
     }
 
     /// 当前选中的离线账号（若有）。
@@ -278,7 +300,7 @@ final class AppState: ObservableObject {
         accountInfo(for: activeAccountID)?.offline
     }
 
-    /// 启动用的统一档案：正版直接取，离线则套一层 MicrosoftAccount。
+    /// 启动用的统一档案：正版 / 皮肤站 / 离线统一套进 MicrosoftAccount。
     var launchAccount: MicrosoftAccount? { displayAccount }
 
     /// 是否处于离线（伪正版）启动模式。
@@ -286,9 +308,21 @@ final class AppState: ObservableObject {
         accountInfo(for: activeAccountID)?.offline != nil
     }
 
-    /// 是否存在任何可用于启动的账号（正版或离线）。
+    /// 是否处于皮肤站启动模式（Yggdrasil 令牌进 accessToken，联机皮肤站服务器可用）。
+    var isYggdrasilLaunch: Bool {
+        activeYggdrasilAccount != nil
+    }
+
+    /// 是否存在任何可用于启动的账号（正版 / 皮肤站 / 离线）。
     var hasAnyAccount: Bool {
         accountInfo(for: activeAccountID) != nil
+    }
+
+    /// 账号检查行与卡片上的人话类型文案。
+    var activeAccountKindText: String {
+        if isOfflineLaunch { return "离线（伪正版）" }
+        if let skin = activeYggdrasilAccount { return "皮肤站 · \(skin.serverHost)" }
+        return "微软正版"
     }
 
     private func restoreActiveAccount() {
@@ -298,7 +332,7 @@ final class AppState: ObservableObject {
         } else if account != nil {
             activeAccountID = account?.id
         } else {
-            activeAccountID = offlineAccounts.first?.id
+            activeAccountID = offlineAccounts.first?.id ?? yggdrasilAccounts.first?.id
         }
         persistActiveAccount()
     }
@@ -334,7 +368,7 @@ final class AppState: ObservableObject {
         offlineAccounts.removeAll { $0.id == id }
         OfflineAccountStore().save(offlineAccounts)
         if activeAccountID == id {
-            activeAccountID = offlineAccounts.first?.id ?? account?.id
+            activeAccountID = offlineAccounts.first?.id ?? yggdrasilAccounts.first?.id ?? account?.id
             persistActiveAccount()
         }
     }
@@ -345,6 +379,66 @@ final class AppState: ObservableObject {
         guard let index = offlineAccounts.firstIndex(where: { $0.id == accountID }) else { return }
         offlineAccounts[index].skinURL = skinURL
         OfflineAccountStore().save(offlineAccounts)
+    }
+
+    // MARK: - 皮肤站账号管理（Yggdrasil，对照 Android 端 littleskin）
+
+    /// 皮肤站登录：authenticate 成功后保存 Keychain 令牌、同步一次材质、
+    /// upsert 档案并设为当前账号。抛错时由调用方直接展示 errorDescription。
+    @discardableResult
+    func loginYggdrasil(server: String, username: String, password: String) async throws -> YggdrasilAccount {
+        let service = YggdrasilAuthService()
+        let result = try await service.authenticate(server: server, username: username, password: password)
+
+        var account = YggdrasilAccount(
+            id: result.profileID,
+            name: result.profileName,
+            serverURL: YggdrasilAuth.normalizeServer(server),
+            skinURL: nil,
+            skinModel: "steve",
+            capeURL: nil
+        )
+        YggdrasilSessionStore().save(
+            YggdrasilSession(accessToken: result.accessToken,
+                             clientToken: result.clientToken,
+                             updatedAt: Date()),
+            accountID: account.id
+        )
+
+        // 登录成功立刻同步材质；失败静默保留默认（进皮肤页或下次登录再拉）。
+        if let textures = await service.fetchTextures(server: account.serverURL, rawUUID: account.rawUUID) {
+            account = account.updatingTextures(textures)
+        }
+
+        upsertYggdrasilAccount(account)
+        activeAccountID = account.id
+        persistActiveAccount()
+        return account
+    }
+
+    /// 覆盖保存一份皮肤站档案（材质同步 / 上传皮肤后调用）。
+    func updateYggdrasilAccount(_ account: YggdrasilAccount) {
+        upsertYggdrasilAccount(account)
+    }
+
+    /// 删除皮肤站账号：档案与 Keychain 令牌一起清；正被使用则回退到其它账号。
+    func removeYggdrasilAccount(id: String) {
+        yggdrasilAccounts.removeAll { $0.id == id }
+        YggdrasilAccountStore().save(yggdrasilAccounts)
+        YggdrasilSessionStore().clear(accountID: id)
+        if activeAccountID == id {
+            activeAccountID = account?.id ?? offlineAccounts.first?.id
+            persistActiveAccount()
+        }
+    }
+
+    private func upsertYggdrasilAccount(_ account: YggdrasilAccount) {
+        if let index = yggdrasilAccounts.firstIndex(where: { $0.id == account.id }) {
+            yggdrasilAccounts[index] = account
+        } else {
+            yggdrasilAccounts.append(account)
+        }
+        YggdrasilAccountStore().save(yggdrasilAccounts)
     }
 
     // MARK: - Installed versions
@@ -517,12 +611,53 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 设置页「立即处理」：对当前选中的版本做一次移动端适配，并把结果回显出来。
+    func applyMobileCompatNow() {
+        guard let version = selectedVersion else {
+            compatStatus = "先在「版本」里选中一个已安装的版本。"
+            return
+        }
+        let layout = InstallLayout.forVersion(version.id)
+        let settings = MobileCompat.Settings.load()
+        do {
+            let report = try MobileCompat.apply(to: layout.gameDirectory, aggressive: settings.aggressive)
+            compatStatus = report.isEmpty
+                ? "已经是移动端适配状态，无需改动。"
+                : report.lines.joined(separator: "\n")
+        } catch {
+            compatStatus = "处理失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 把被兼容层移出 mods 的模组全部搬回来（想恢复整合包原状时用）。
+    func restoreMobileCompat() {
+        guard let version = selectedVersion else {
+            compatStatus = "先在「版本」里选中一个已安装的版本。"
+            return
+        }
+        let layout = InstallLayout.forVersion(version.id)
+        do {
+            let restored = try MobileCompat.restoreAll(in: layout.gameDirectory)
+            compatStatus = restored.isEmpty
+                ? "中转目录里没有可恢复的模组。"
+                : "已恢复：" + restored.joined(separator: "、")
+        } catch {
+            compatStatus = "恢复失败：\(error.localizedDescription)"
+        }
+    }
+
     private func performLaunch(_ plan: LaunchPlan) async {
         launchPhase = .launching
         try? FileManager.default.createDirectory(
             at: plan.gameDirectory,
             withIntermediateDirectories: true
         )
+        // 启动前再兜一次：用户可能在设置里改了档位，而引擎层那一次是在 launch 里执行的，
+        // 这里提前做能让「画质/光影」在刚装完包、还没进过设置页时也生效。
+        let compat = MobileCompat.Settings.load()
+        if compat.enabled {
+            _ = try? MobileCompat.apply(to: plan.gameDirectory, aggressive: compat.aggressive)
+        }
         try? FileManager.default.createDirectory(
             at: plan.nativesDirectory,
             withIntermediateDirectories: true
@@ -553,7 +688,7 @@ final class AppState: ObservableObject {
         checks.append(LaunchCheck(
             id: "account",
             title: "账号",
-            detail: "\(launchAccount.name) · \(isOfflineLaunch ? "离线（伪正版）" : "微软正版")",
+            detail: "\(launchAccount.name) · \(activeAccountKindText)",
             status: .ok
         ))
 
@@ -676,7 +811,36 @@ final class AppState: ObservableObject {
         }
 
         let isOffline = isOfflineLaunch
+        let isYggdrasil = isYggdrasilLaunch
         var validSession: StoredSession?
+        var yggdrasilToken = ""
+
+        // 皮肤站账号：authlib-injector 注入（游戏内显示皮肤站皮肤、进皮肤站认证服务器）。
+        // jar 拿不到不挡启动（与 Windows 端同语义），只降级为警告。
+        var authlibArguments: [String] = []
+        if let skinAccount = activeYggdrasilAccount, isYggdrasil {
+            do {
+                let injector = try await AuthlibInjectorService().ensureJar()
+                authlibArguments = AuthlibInjector.jvmArguments(
+                    jarPath: injector.jarPath,
+                    serverURL: skinAccount.serverURL
+                )
+                checks.append(LaunchCheck(
+                    id: "authlib",
+                    title: "皮肤站注入",
+                    detail: "authlib-injector \(injector.version) 就绪，游戏内将显示皮肤站皮肤。",
+                    status: .ok
+                ))
+            } catch {
+                checks.append(LaunchCheck(
+                    id: "authlib",
+                    title: "皮肤站注入",
+                    detail: "authlib-injector 获取失败（\(error.localizedDescription)）。本次启动游戏内可能不显示皮肤站皮肤，不影响进入游戏。",
+                    status: .warning
+                ))
+            }
+        }
+
         if isOffline {
             // 离线（伪正版）模式根本不碰微软令牌：用固定离线 UUID 直接进入单机 / LAN。
             checks.append(LaunchCheck(
@@ -685,6 +849,25 @@ final class AppState: ObservableObject {
                 detail: "离线（伪正版）模式：无需微软令牌，单机 / 局域网可用。在线正版服务器会拒绝，属预期。",
                 status: .ok
             ))
+        } else if let skinAccount = activeYggdrasilAccount, isYggdrasil {
+            // 皮肤站：Yggdrasil accessToken 直接进 --accessToken；
+            // 进皮肤站架设的认证服务器（authlib-injector）时即为正版身份。
+            if let token = await freshYggdrasilToken(for: skinAccount) {
+                yggdrasilToken = token
+                checks.append(LaunchCheck(
+                    id: "session",
+                    title: "登录令牌",
+                    detail: "皮肤站令牌有效（\(skinAccount.serverHost)）",
+                    status: .ok
+                ))
+            } else {
+                checks.append(LaunchCheck(
+                    id: "session",
+                    title: "登录令牌",
+                    detail: "皮肤站登录已失效，请到「账号」重新登录。",
+                    status: .failed
+                ))
+            }
         } else {
             validSession = await freshSession()
             if let validSession {
@@ -767,6 +950,27 @@ final class AppState: ObservableObject {
             }
         }
 
+        // 整合包规模自检：几百个模组的包能不能进得去，堆大小和光影开关起决定作用。
+        let modCount = MobileCompat.modCount(in: layout.gameDirectory)
+        let compat = MobileCompat.Settings.load()
+        if modCount > 0 {
+            // 渲染器决定 Sodium 能不能用：auto / gl4es 这一档上 Sodium 0.5 的
+            // 地形优化路径本来就跑不通，这里提前说清楚，别让用户在加载地形上反复等。
+            let renderer = AmethystPreferences.rendererName(homeDirectory: EngineLaunchContract.homeDirectory)
+            let sodiumRisk = !compat.aggressive && AmethystPreferences.isSodiumUnsafe(renderer: renderer)
+            let detail: String
+            var status: LaunchCheck.Status = compat.enabled ? .ok : .warning
+            if !compat.enabled {
+                detail = "\(modCount) 个模组 · 移动端适配已关闭；Iris 光影在 iOS 上会卡在「正在加载地形」"
+            } else if sodiumRisk {
+                detail = "\(modCount) 个模组 · 光影已关 · 渲染器 \(renderer ?? "auto") 与 Sodium 0.5 不匹配，仍卡加载地形就打开「极端兼容」"
+                status = .warning
+            } else {
+                detail = "\(modCount) 个模组 · 移动端适配已开启（光影关闭、Sodium staging 降级）"
+            }
+            checks.append(LaunchCheck(id: "compat", title: "整合包", detail: detail, status: status))
+        }
+
         // 通用策略：同一个二进制在所有设备上按运行时可用内存自动收敛，
         // 不为具体机型出包，也不让用户把堆设到会被 jetsam 杀掉的值。
         let cap = DeviceCapabilities.maxSafeHeapMB
@@ -775,22 +979,33 @@ final class AppState: ObservableObject {
         let memory = min(preferred, cap)
         let recommended = DeviceCapabilities.recommendedHeapMB
         let overRecommended = memory > recommended + 512
+        // 手机上「能启动」和「能进世界」是两道关：整合包越大，后者越吃堆。
+        let memoryTooLow = modCount >= 150 && memory < 3072
+        let memoryAtCap = memory >= cap
         checks.append(LaunchCheck(
             id: "memory",
             title: "内存",
-            detail: preferred > cap
-                ? "设置 \(preferred) MB，本机安全上限 \(cap) MB，已自动夹到 \(memory) MB。"
-                : (overRecommended
-                    ? "\(memory) MB，高于建议的 \(recommended) MB，可能被系统终止。"
-                    : "\(memory) MB（建议 \(recommended) MB · 上限 \(cap) MB）"),
-            status: (preferred > cap || overRecommended) ? .warning : .ok
+            detail: memoryTooLow
+                ? (memoryAtCap
+                    ? "\(memory) MB 已是本机上限，对 \(modCount) 个模组仍偏小：建议打开「极端兼容」、视图距离降到 2，或换更小的整合包。"
+                    : "\(memory) MB 对 \(modCount) 个模组的整合包偏小（建议 3072–4096 MB），加载地形时会一直 GC 像卡死。")
+                : (preferred > cap
+                    ? "设置 \(preferred) MB，本机安全上限 \(cap) MB，已自动夹到 \(memory) MB。"
+                    : (overRecommended
+                        ? "\(memory) MB，高于建议的 \(recommended) MB，可能被系统终止。"
+                        : "\(memory) MB（建议 \(recommended) MB · 上限 \(cap) MB）")),
+            status: (preferred > cap || overRecommended || memoryTooLow) ? .warning : .ok
         ))
 
         var plan: LaunchPlan?
         let offlineToken = "offline"
-        let accessToken = isOffline ? offlineToken : (validSession?.accessToken ?? "")
-        let userType = isOffline ? "mojang" : "msa"
-        if isOffline || validSession != nil {
+        // 皮肤站账号的 Yggdrasil 令牌同样走 accessToken 通道（userType 用 mojang，
+        // 现代版本里该字段只影响展示，真正鉴权的是令牌本身）。
+        let accessToken = isOffline
+            ? offlineToken
+            : (isYggdrasil ? yggdrasilToken : (validSession?.accessToken ?? ""))
+        let userType = (isOffline || isYggdrasil) ? "mojang" : "msa"
+        if isOffline || validSession != nil || !yggdrasilToken.isEmpty {
             do {
                 plan = try LaunchPlanBuilder.build(
                     detail: detail,
@@ -800,7 +1015,8 @@ final class AppState: ObservableObject {
                     accessToken: accessToken,
                     memoryMB: memory,
                     maxHeapMB: cap,
-                    userType: userType
+                    userType: userType,
+                    authlibArguments: authlibArguments
                 )
             } catch {
                 checks.append(LaunchCheck(
@@ -852,6 +1068,58 @@ final class AppState: ObservableObject {
             launchErrorMessage = "登录续期失败：\(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// 皮肤站令牌保活：Yggdrasil 令牌不带回有效期，每次启动前用 clientToken
+    /// refresh 一次。refresh 因网络抖动失败时保留旧令牌（可能仍然有效，只是
+    /// 这次 refresh 没成功）；服务器明确拒绝才判失效。
+    private func freshYggdrasilToken(for account: YggdrasilAccount) async -> String? {
+        let store = YggdrasilSessionStore()
+        guard let stored = store.load(accountID: account.id), !stored.accessToken.isEmpty else {
+            return nil
+        }
+
+        let service = YggdrasilAuthService()
+        do {
+            let renewed = try await service.refresh(
+                server: account.serverURL,
+                accessToken: stored.accessToken,
+                clientToken: stored.clientToken
+            )
+            store.save(renewed, accountID: account.id)
+            return renewed.accessToken
+        } catch is URLError {
+            // 网络抖动：旧令牌大概率还有效，别挡启动。
+            return stored.accessToken
+        } catch {
+            return nil
+        }
+    }
+
+    /// 皮肤上传 / 披风管理用的 Minecraft Services 令牌（顺带完成保活续期）。
+    func microsoftTokenForProfileActions() async -> String? {
+        guard let session = await freshSession() else { return nil }
+        return session.accessToken
+    }
+
+    /// 上传皮肤 / 换披风成功后同步 Mojang 档案到本地会话，头像立即跟着变。
+    /// 令牌与过期时间保持不变，只更新档案里的皮肤 URL。
+    func applyMicrosoftProfile(skinURL: String?) {
+        guard let current = session else { return }
+        let updatedAccount = MicrosoftAccount(
+            id: current.account.id,
+            name: current.account.name,
+            skinURL: skinURL ?? current.account.skinURL
+        )
+        let stored = StoredSession(
+            account: updatedAccount,
+            accessToken: current.accessToken,
+            refreshToken: current.refreshToken,
+            expiresAt: current.expiresAt
+        )
+        sessionStore.save(stored)
+        session = stored
+        account = updatedAccount
     }
 
     // MARK: - Persistence / runtime detection

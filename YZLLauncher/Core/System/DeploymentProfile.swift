@@ -56,15 +56,12 @@ enum DeploymentProfile: String, Equatable {
     }
 
     /// 该档位该发哪个包给用户。
-    /// 引擎是 fork-overlay 单包（YZLUI 注入 Amethyst 主 App），不是外壳 + 引擎两个 App。
     var packageName: String {
         switch self {
         case .permanentNoComputer, .oneTimeComputerThenPermanent:
-            return "YZL-engine.tipa"
-        case .oneTimePairing, .appJITAdaptation, .computerAttached:
-            return "YZL-engine-sideload-unsigned.ipa（SideStore 重签）"
-        case .unsupportedOld:
-            return "不适用（需 iOS 15.0+）"
+            return "com.yzl.launcher.tipa"
+        default:
+            return "YZLLauncher-unsigned.ipa（需自签）"
         }
     }
 }

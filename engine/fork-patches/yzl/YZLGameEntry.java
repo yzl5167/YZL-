@@ -1,9 +1,13 @@
 package net.kdt.pojavlaunch;
 
 import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 
 /**
@@ -33,6 +37,7 @@ public final class YZLGameEntry {
 
         String mainClass = extractString(json, "mainClass");
         String versionID = extractString(json, "versionID");
+        String gameDir = extractString(json, "gameDirectory");
         List<String> classpath = extractArray(json, "classpath");
         List<String> gameArgs = extractArray(json, "gameArguments");
 
@@ -42,6 +47,11 @@ public final class YZLGameEntry {
 
         System.out.println("[YZL] Launching " + versionID + " via YZL launch plan, mainClass=" + mainClass
             + ", classpath entries=" + classpath.size() + ", game args=" + gameArgs.size());
+
+        // 卡死采样：整合包在「正在加载地形」卡住时，界面完全静止，什么日志都不再输出。
+        // 起一个守护线程在几个时间点把全部 Java 线程栈落到磁盘，下一次就能直接看出
+        // 是哪个线程（渲染线程 / 区块构建 / 集成服务端 worldgen）在等锁。
+        startStallWatchdog(versionID, gameDir);
 
         // 沿用 Tools.launchMinecraft 的进程内启动机制。
         PojavClassLoader loader = (PojavClassLoader) ClassLoader.getSystemClassLoader();
@@ -57,6 +67,79 @@ public final class YZLGameEntry {
         Class<?> clazz = loader.loadClass(mainClass);
         Method method = clazz.getMethod("main", String[].class);
         method.invoke(null, new Object[]{gameArgs.toArray(new String[0])});
+    }
+
+    // ---- 卡死采样 ----
+
+    /// 第一次采样在 120 秒，之后 240 / 420 秒，最多三份，避免日志无限膨胀。
+    /// 位置：<gameDir>/logs/yzl-stall-<版本>-<n>.log，游戏目录不可写时退回 user.home。
+    private static void startStallWatchdog(final String versionID, final String gameDir) {
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                long[] delays = new long[] {120000L, 120000L, 180000L};
+                for (int i = 0; i < delays.length; i++) {
+                    try {
+                        Thread.sleep(delays[i]);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    File target = stallLogFile(versionID, gameDir, i + 1);
+                    try {
+                        dumpThreads(target);
+                        System.out.println("[YZL] thread dump #" + (i + 1) + " -> " + target.getAbsolutePath());
+                    } catch (Throwable t) {
+                        System.out.println("[YZL] thread dump failed: " + t);
+                    }
+                }
+            }
+        }, "yzl-stall-watchdog");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private static File stallLogFile(String versionID, String gameDir, int index) {
+        String name = "yzl-stall-" + sanitizeName(versionID) + "-" + index + ".log";
+        File dir = null;
+        if (gameDir != null && !gameDir.isEmpty()) {
+            dir = new File(new File(gameDir), "logs");
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                dir = null;
+            }
+        }
+        if (dir == null) {
+            dir = new File(System.getProperty("user.home", "."));
+        }
+        return new File(dir, name);
+    }
+
+    private static String sanitizeName(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return "unknown";
+        }
+        return raw.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static void dumpThreads(File target) throws IOException {
+        StringBuilder sb = new StringBuilder(64 * 1024);
+        sb.append("# YZL stall sample ").append(new Date()).append('\n');
+        Map<Thread, StackTraceElement[]> traces = Thread.getAllStackTraces();
+        for (Map.Entry<Thread, StackTraceElement[]> entry : traces.entrySet()) {
+            Thread t = entry.getKey();
+            sb.append("\n\"").append(t.getName()).append("\" #").append(t.getId())
+                .append(' ').append(t.getState())
+                .append(t.isDaemon() ? " daemon" : "").append('\n');
+            StackTraceElement[] stack = entry.getValue();
+            for (int i = 0; i < stack.length; i++) {
+                sb.append("    at ").append(stack[i]).append('\n');
+            }
+        }
+        FileWriter writer = new FileWriter(target, false);
+        try {
+            writer.write(sb.toString());
+        } finally {
+            writer.close();
+        }
     }
 
     // ---- 最小 JSON 读取（Amethyst 的 JRE 不带 org.json；字段平铺且结构固定）----

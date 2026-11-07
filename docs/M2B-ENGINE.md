@@ -39,10 +39,10 @@ xcodegen 工程」。深读源码后确认此路不通，证据有三：
 ## 3. 分层契约
 
 ```
-┌─ AngelAuraAmethyst.app（显示名 YZL Launcher，引擎单体包）─────┐
+┌─ YZLLauncher.app（fork 构建，引擎本体）───────────────────────┐
 │  主二进制（CMake）：Amethyst Natives + launchJVM + 原生桥      │
 │  Frameworks/：libpojavexec*、GL4ES/Mesa/MetalANGLE/MoltenVK…  │
-│  java_runtimes/：JRE 8/17 完整可用；21/25 空壳（上游 CDN 失效）│
+│  java_runtimes/：JRE 8/17/21/25（assets.angelauramc.dev）     │
 │  libs/ + libs_caciocavallo(17)/：JavaApp jar、AWT 桥          │
 │  Frameworks/YZLUI.framework：← YZL SwiftUI 外壳（本仓库产出） │
 └───────────────────────────────────────────────────────────────┘

@@ -62,20 +62,17 @@ final class MirrorPolicyTests: XCTestCase {
         )
     }
 
-    func testAssetIndexPackagesStayOnOfficialHost() throws {
-        // BMCLAPI 不镜像 /v1/packages/（实测 4/4 TLS 断开），
-        // 索引改写到镜像会让每个版本都卡在「资源索引获取失败」。
+    func testAssetIndexPackagesUseMirrorWithOfficialFallback() throws {
+        // 资源索引以前被排除在镜像外（当时 BMCLAPI 该路径 TLS 抖动）。
+        // 现在镜像可用，镜像优先、官方兜底；失败时调用方会立刻换源。
         let cases = [
             "https://piston-meta.mojang.com/v1/packages/abc/1.20.1.json",
             "https://launchermeta.mojang.com/v1/packages/abc/1.json"
         ]
         for raw in cases {
             let url = try XCTUnwrap(URL(string: raw))
-            XCTAssertEqual(
-                MirrorPolicy.rewrite(url, source: .mirror).absoluteString,
-                raw,
-                raw
-            )
+            let mirrored = MirrorPolicy.rewrite(url, source: .mirror).absoluteString
+            XCTAssertTrue(mirrored.hasPrefix("https://bmclapi2.bangbang93.com/"), raw)
         }
     }
 

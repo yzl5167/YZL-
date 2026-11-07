@@ -6,6 +6,7 @@ struct AccountView: View {
     let onBack: () -> Void
     @State private var showSignOutConfirm = false
     @State private var showOfflineCreate = false
+    @State private var showYggdrasilLogin = false
 
     var body: some View {
         ZStack {
@@ -21,6 +22,7 @@ struct AccountView: View {
                         } else {
                             emptyCard
                         }
+                        yggdrasilSection
                         offlineSection
                         privacyCard
                     }
@@ -49,6 +51,10 @@ struct AccountView: View {
             OfflineCreateSheet()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showYggdrasilLogin) {
+            YggdrasilLoginSheet()
+                .environmentObject(appState)
+        }
     }
 
     private var header: some View {
@@ -67,7 +73,7 @@ struct AccountView: View {
                 Text("账号管理")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(YZLTheme.text)
-                Text("微软正版账号 · 设备码登录")
+                Text("微软正版 · 皮肤站 · 离线账号")
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
             }
@@ -232,7 +238,7 @@ struct AccountView: View {
 
     private var privacyCard: some View {
         YZLCard {
-            Text("微软密码不会交给启动器：设备码登录在微软网页完成，只保存 Minecraft 令牌和刷新令牌，均存放在本机 Keychain。")
+            Text("微软密码不会交给启动器：设备码登录在微软网页完成，只保存 Minecraft 令牌和刷新令牌，均存放在本机 Keychain。皮肤站密码只提交给皮肤站本身，令牌同样只存本机。")
                 .font(.system(size: 11))
                 .foregroundStyle(YZLTheme.muted)
                 .lineSpacing(4)
@@ -328,6 +334,87 @@ struct AccountView: View {
             return appState.account?.id ?? ""
         }
         return String(id.prefix(13)) + "…"
+    }
+
+    // MARK: - 皮肤站（Yggdrasil）
+
+    private var yggdrasilSection: some View {
+        YZLCard(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text("皮肤站账号")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(YZLTheme.text)
+                    Spacer()
+                    Button {
+                        showYggdrasilLogin = true
+                    } label: {
+                        Label("登录", systemImage: "plus")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .frame(height: 32)
+                }
+
+                Text("用 LittleSkin 等 authlib-injector 标准皮肤站的角色登录，可进入皮肤站认证的联机服务器并显示皮肤站皮肤。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(4)
+
+                if appState.yggdrasilAccounts.isEmpty {
+                    Text("还没有皮肤站账号。点「登录」输入皮肤站邮箱与密码，例如 littleskin.cn。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(YZLTheme.lightMuted)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(appState.yggdrasilAccounts) { skin in
+                        yggdrasilRow(skin)
+                    }
+                }
+            }
+        }
+    }
+
+    private func yggdrasilRow(_ skin: YggdrasilAccount) -> some View {
+        let isActive = appState.activeAccountID == skin.id
+        return HStack(spacing: 12) {
+            AvatarView(size: 42, account: skin.asMicrosoftAccount)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(skin.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(YZLTheme.text)
+                    if isActive {
+                        StatusBadge(text: "当前", tone: .success)
+                    }
+                }
+                Text(skin.serverHost)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(YZLTheme.muted)
+            }
+            Spacer()
+            if !isActive {
+                Button {
+                    appState.selectActiveAccount(id: skin.id)
+                } label: {
+                    Text("使用")
+                }
+                .buttonStyle(PrimaryButtonStyle(prominent: false))
+                .frame(width: 64, height: 34)
+            }
+            Button {
+                appState.removeYggdrasilAccount(id: skin.id)
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(YZLTheme.danger)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 34, height: 34)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(YZLTheme.field)
+        )
     }
 }
 
@@ -618,5 +705,82 @@ private struct OfflineCreateSheet: View {
         let url: String? = skinModel == "custom" ? customSkinURL.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         appState.createOfflineAccount(name: trimmedName, skinModel: skinModel, skinURL: url)
         dismiss()
+    }
+}
+
+// MARK: - 皮肤站登录
+
+/// 皮肤站（Yggdrasil）登录表单：API 地址 + 邮箱/用户名 + 密码。
+/// 密码直接 POST 给皮肤站的 authserver/authenticate，不经任何第三方。
+private struct YggdrasilLoginSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var server = YggdrasilAuth.defaultServer
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isLoggingIn = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("皮肤站 API 地址") {
+                    TextField(YggdrasilAuth.defaultServer, text: $server)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                }
+                Section("账号") {
+                    TextField("邮箱或用户名", text: $username)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    SecureField("密码", text: $password)
+                }
+                Section {
+                    Text("支持 LittleSkin 与所有 authlib-injector 标准皮肤站。登录前请先在皮肤站网页创建角色，否则会提示「没有角色」。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineSpacing(4)
+                    if let message = errorMessage {
+                        Text(message)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(YZLTheme.danger)
+                            .lineSpacing(4)
+                    }
+                }
+            }
+            .navigationTitle("登录皮肤站")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isLoggingIn {
+                        ProgressView()
+                    } else {
+                        Button("登录") { login() }
+                            .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private func login() {
+        let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty, !password.isEmpty, !isLoggingIn else { return }
+        isLoggingIn = true
+        errorMessage = nil
+        Task { @MainActor in
+            do {
+                _ = try await appState.loginYggdrasil(server: server, username: user, password: password)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoggingIn = false
+        }
     }
 }

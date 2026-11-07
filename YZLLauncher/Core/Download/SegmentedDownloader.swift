@@ -42,8 +42,9 @@ final class SegmentedDownloader {
             self.session = session
         } else {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForRequest = 30
             config.timeoutIntervalForResource = 900
+            config.httpMaximumConnectionsPerHost = 12
             config.httpAdditionalHeaders = ["User-Agent": "YZLLauncher/0.1 (iOS)"]
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.urlCache = nil
@@ -69,10 +70,47 @@ final class SegmentedDownloader {
     }
 
     private func perform(spec: DownloadSpec, continuation: DownloadContinuation) async throws {
+        do {
+            try await performOnce(spec: spec, continuation: continuation)
+            // 用哪个源成功就记哪个：会话内后续文件的健康排序靠它。
+            SourceHealth.shared.recordSuccess(spec.url)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let failure as DownloadFailure where failure == .cancelled {
+            throw failure
+        } catch {
+            SourceHealth.shared.recordFailure(spec.url, reason: error.localizedDescription)
+            // 主源（通常是镜像）失败时自动切官方 / 镜像备用源，避免一个 502
+            // 就让整个安装停在「N 个文件失败」。分片按字节区间，换源后仍可复用。
+            guard let fallback = spec.fallbackURL else { throw error }
+            continuation.yield(.probing)
+            let alternate = spec.replacingURL(fallback)
+            do {
+                try await performOnce(spec: alternate, continuation: continuation)
+                SourceHealth.shared.recordSuccess(fallback)
+            } catch let failure as DownloadFailure where failure == .cancelled {
+                throw failure
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                SourceHealth.shared.recordFailure(fallback, reason: error.localizedDescription)
+                throw error
+            }
+        }
+    }
+
+    private func performOnce(spec: DownloadSpec, continuation: DownloadContinuation) async throws {
         try FileManager.default.createDirectory(
             at: spec.destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+
+        // 小文件且已知大小：直接单连接下载，省掉每个文件一次 HEAD。
+        // 全量资源有 3000+ 个小对象，按 100ms 往返算，光探测就要多花好几分钟。
+        if spec.maxConnections <= 1, let expected = spec.expectedSize, expected > 0 {
+            try await singleConnection(spec: spec, expected: expected, continuation: continuation)
+            return
+        }
 
         continuation.yield(.probing)
         let probe = try await headProbe(spec.url)
@@ -105,7 +143,11 @@ final class SegmentedDownloader {
         }
 
         var leaves: [DownloadSegment]
-        if let state = stateStore.load(spec.id), state.spec == spec, !state.segments.isEmpty {
+        if let state = stateStore.load(spec.id),
+           state.spec.id == spec.id,
+           state.spec.url == spec.url,
+           state.spec.expectedSize == spec.expectedSize,
+           !state.segments.isEmpty {
             leaves = state.segments
         } else {
             leaves = SegmentPlanner.plan(totalBytes: total, segmentSize: spec.segmentSize)
@@ -241,56 +283,46 @@ final class SegmentedDownloader {
         let total = expected ?? 0
         continuation.yield(.planned(totalBytes: total, segments: 1, segmented: false))
 
-        let temporary = spec.destination.appendingPathExtension("single")
-        let fm = FileManager.default
-        if fm.fileExists(atPath: temporary.path) {
-            try? fm.removeItem(at: temporary)
-        }
-        _ = fm.createFile(atPath: temporary.path, contents: Data())
+        var request = URLRequest(url: spec.url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 60
 
-        guard let handle = FileHandle(forWritingAtPath: temporary.path) else {
-            throw DownloadFailure.ioFailure("无法创建临时文件")
-        }
-
-        var written: Int64 = 0
-        var buffer = Data(capacity: 65_536)
-
+        // 不要再按字节 `for try await byte in bytes` 循环：一个 20MB 的 jar 要跑
+        // 两千万次迭代，CPU 和主线程调度会把「网速」拖成个位数 MB/s。
+        // URLSession 自带的 download 任务直接落盘，小文件与不支持 Range 的源都走这里。
+        let result: (URL, URLResponse)
         do {
-            let (bytes, response) = try await session.bytes(for: URLRequest(url: spec.url))
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                try? handle.close()
-                throw DownloadFailure.ioFailure("服务器返回了无法处理的响应")
-            }
-
-            for try await byte in bytes {
-                if Task.isCancelled {
-                    try? handle.close()
-                    throw DownloadFailure.cancelled
-                }
-                buffer.append(byte)
-                written += 1
-                if buffer.count >= 65_536 {
-                    try handle.write(contentsOf: buffer)
-                    buffer.removeAll(keepingCapacity: true)
-                    continuation.yield(.progress(downloaded: written, total: total, active: 1))
-                }
-            }
-
-            if !buffer.isEmpty {
-                try handle.write(contentsOf: buffer)
-            }
-            try handle.close()
-        } catch let failure as DownloadFailure {
-            throw failure
+            result = try await session.download(for: request)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw DownloadFailure.cancelled
+        } catch is CancellationError {
+            throw DownloadFailure.cancelled
         } catch {
-            try? handle.close()
             throw DownloadFailure.ioFailure(error.localizedDescription)
         }
+        let temporary = result.0
+        let response = result.1
 
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            try? FileManager.default.removeItem(at: temporary)
+            throw DownloadFailure.ioFailure("服务器返回了无法处理的响应")
+        }
+
+        let size = fileSize(at: temporary)
+        if let expected = spec.expectedSize, size != expected {
+            try? FileManager.default.removeItem(at: temporary)
+            throw DownloadFailure.sizeMismatch(expected: expected, actual: size)
+        }
+
+        continuation.yield(.progress(downloaded: size, total: max(total, size), active: 1))
         continuation.yield(.verifying)
-        try finalize(spec: spec, temporary: temporary, expectedSize: spec.expectedSize ?? (total > 0 ? total : written))
+        try finalize(
+            spec: spec,
+            temporary: temporary,
+            expectedSize: spec.expectedSize ?? (total > 0 ? total : size)
+        )
         stateStore.clearParts(for: spec.id)
-        continuation.yield(.finished(destination: spec.destination, downloaded: written))
+        continuation.yield(.finished(destination: spec.destination, downloaded: size))
     }
 
     private func assemble(spec: DownloadSpec, leaves: [DownloadSegment], total: Int64) throws {

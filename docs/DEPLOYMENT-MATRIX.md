@@ -19,11 +19,11 @@
 
 | 档位 | 系统版本 | 签名 / 有效期 | 电脑依赖 | JIT 方式 | 发哪个包 |
 | --- | --- | --- | --- | --- | --- |
-| `permanentNoComputer` | **iOS 14.0 – 15.4.1**（A12+ 可到 15.6 beta） | TrollStore 永久 | **全程零电脑** | TrollStore 自动 + App 内 URL Scheme | `YZL-engine.tipa` |
-| `oneTimeComputerThenPermanent` | 15.5 / 15.6 正式版、16.0 – 16.6.1、16.7 RC (20H18)、17.0 | TrollStore 永久 | **首次一次**：电脑侧载 TrollInstallerX / TrollRestore | 同上，之后永久免维护 | `YZL-engine.tipa` |
-| `oneTimePairing` | **17.4 – 18.x** | 免费 ID 7 天（SideStore 手机续签） | **首次一次**：电脑生成配对文件 | 之后手机端 StikDebug + LocalDevVPN | YZL-engine-sideload-unsigned.ipa |
-| `appJITAdaptation` | **iOS 26+** | 同上 | 首次一次 | StikDebug 有限支持，App 需适配新 JIT 方式（M2 待做） | YZL-engine-sideload-unsigned.ipa |
-| `computerAttached` | 16.7.x 非 RC、17.0.1 – 17.3.x | 免费 ID 7 天 | **持续需要电脑** | AltServer / SideJITServer 附加 | YZL-engine-sideload-unsigned.ipa |
+| `permanentNoComputer` | **iOS 14.0 – 15.4.1**（A12+ 可到 15.6 beta） | TrollStore 永久 | **全程零电脑** | TrollStore 自动 + App 内 URL Scheme | `com.yzl.launcher.tipa` |
+| `oneTimeComputerThenPermanent` | 15.5 / 15.6 正式版、16.0 – 16.6.1、16.7 RC (20H18)、17.0 | TrollStore 永久 | **首次一次**：电脑侧载 TrollInstallerX / TrollRestore | 同上，之后永久免维护 | `com.yzl.launcher.tipa` |
+| `oneTimePairing` | **17.4 – 18.x** | 免费 ID 7 天（SideStore 手机续签） | **首次一次**：电脑生成配对文件 | 之后手机端 StikDebug + LocalDevVPN | 未签名 IPA 自签 |
+| `appJITAdaptation` | **iOS 26+** | 同上 | 首次一次 | StikDebug 有限支持，App 需适配新 JIT 方式（M2 待做） | 未签名 IPA 自签 |
+| `computerAttached` | 16.7.x 非 RC、17.0.1 – 17.3.x | 免费 ID 7 天 | **持续需要电脑** | AltServer / SideJITServer 附加 | 未签名 IPA 自签 |
 | `unsupportedOld` | < iOS 15.0 | — | — | 本 App 部署目标为 15.0 | 不支持 |
 
 > 覆盖结论：**iOS 15.0 及以上全部可装**；其中约一半档位在首次一次电脑后即可长期免电脑，只有 16.7.x / 17.0.1–17.3.x 这段需要电脑持续参与。
@@ -36,7 +36,7 @@
   - 17.4+ 两档 → 引导手机端 StikDebug + LocalDevVPN（配对一次，之后免电脑）；
   - 只有 `computerAttached` 才提示 AltServer / SideJITServer。
 - `SettingsView` 的「诊断」新增三行：部署档位、电脑依赖、建议安装包，用户打开就能看到本机该走哪条。
-- 引擎 CI 同时产出 `YZL-engine.tipa` 与 `YZL-engine-sideload-unsigned.ipa`：老系统拿 tipa，17.4+ / 18.x 拿干净侧载包重签。**两者都是自带 YZL 界面的引擎单包**（fork-overlay，YZLUI 注入 Amethyst 主 App），不是「外壳 + 引擎」两个 App。1.1 MB 的 `YZLLauncher-unsigned.ipa` 只是 UI 预览，装了进不了游戏。详见 `IOS18-SIDELOAD.md`。
+- 云构建同时产出 `.tipa` 与未签名 IPA，Release 两个都挂 —— 老系统拿 `.tipa`，新系统拿 IPA 自签，**同一个二进制，不按机型出包**。
 - 堆内存同样运行时自适应（`maxSafeHeapMB`，见 `FCL-PARITY.md` §5.2）。
 
 ## 4. 各档操作要点

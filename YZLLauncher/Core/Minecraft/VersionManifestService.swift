@@ -4,11 +4,19 @@ struct VersionManifestService {
     private let manifestURL = URL(string: "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")!
 
     func fetchManifest() async throws -> VersionManifest {
-        let data = try await fetch(url: manifestURL)
         do {
-            return try JSONDecoder().decode(VersionManifest.self, from: data)
+            let data = try await fetch(url: manifestURL)
+            let manifest = try decodeManifest(data)
+            cache(data)
+            return manifest
+        } catch let error as VersionServiceError {
+            // 网络失败时退回上一次成功拉取的清单：已安装版本仍然可选、可启动，
+            // 版本页不再因为一次断网就整页变成「获取版本清单失败」。
+            if let cached = cachedManifest() { return cached }
+            throw error
         } catch {
-            throw VersionServiceError.decodingFailed
+            if let cached = cachedManifest() { return cached }
+            throw error
         }
     }
 
@@ -22,6 +30,39 @@ struct VersionManifestService {
     private func fetch(url: URL) async throws -> Data {
         // 下载源改写 + 双源回退重试，避免一次网络抖动就让版本列表加载失败。
         try await MetadataFetcher.data(for: url)
+    }
+
+    private func decodeManifest(_ data: Data) throws -> VersionManifest {
+        do {
+            return try JSONDecoder().decode(VersionManifest.self, from: data)
+        } catch {
+            throw VersionServiceError.decodingFailed
+        }
+    }
+
+    private var cacheURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base
+            .appendingPathComponent("YZLLauncher", isDirectory: true)
+            .appendingPathComponent("version_manifest_v2.json")
+    }
+
+    private func cache(_ data: Data) {
+        do {
+            try FileManager.default.createDirectory(
+                at: cacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: cacheURL, options: .atomic)
+        } catch {
+            // 缓存失败不影响本次版本列表展示。
+        }
+    }
+
+    private func cachedManifest() -> VersionManifest? {
+        guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+        return try? decodeManifest(data)
     }
 }
 

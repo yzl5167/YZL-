@@ -100,11 +100,11 @@ final class DeviceCapabilitiesTests: XCTestCase {
         XCTAssertFalse(DeviceCapabilities.deploymentProfile(major: 17, minor: 2, build: "21D123").unattendedAfterSetup)
         XCTAssertEqual(
             DeviceCapabilities.deploymentProfile(major: 16, minor: 6, build: "20G75").packageName,
-            "YZL-engine.tipa"
+            "com.yzl.launcher.tipa"
         )
         XCTAssertTrue(
             DeviceCapabilities.deploymentProfile(major: 18, minor: 7, build: "22H300").packageName
-                .contains("sideload-unsigned")
+                .contains("unsigned")
         )
     }
 }

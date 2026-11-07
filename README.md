@@ -5,17 +5,11 @@
 
 仿照 PojavLauncher / Amethyst 思路的 Minecraft: Java Edition iOS 启动器（侧载版）。沿用 YZL 桌面端的浅色蓝主题与卡片样式。
 
-> 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。
->
-> **两种安装形态，按系统选一个**：iOS 15–16.6.1 / 17.0 用 `YZL-engine.tipa`（TrollStore 永久签名）；**iOS 17.4+ / 18.x 不走巨魔用 `YZL-engine-sideload-unsigned.ipa`**（干净未签名，SideStore / 轻松签 重签），完整步骤见 [`docs/IOS18-SIDELOAD.md`](docs/IOS18-SIDELOAD.md)。
->
-> ⚠️ **架构是单包 fork-overlay**：YZL 界面以 `YZLUI.framework` 注入 Amethyst 主 App，装上面任意一个引擎包即可，启动后就是 YZL 界面。`YZLLauncher-unsigned.ipa`（1.1 MB 纯外壳）只是 UI 预览 / 单测用，里面没有 `launchJVM` 符号，**单独装它进不了游戏，也不要把两个包都装上**。
+> 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。主线交付物是 TrollStore `.tipa`。
 
-当前处于 **M0/M1 完成 + M2 引擎件就位、待真机联调**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、安装记录持久化、启动参数组装都已实现并通过云构建与单测。引擎包含图形 dylib、Java 桥 jar 与 `YZLGameEntry`；**JRE 8 / 17 完整可用，JRE 21 / 25 因上游 CDN 失效仍是空壳（1.21+ 暂不能玩，见 `IOS18-SIDELOAD.md` §5）**；YZL UI 注入件（`YZLUI.framework` 二进制）此前缺失，已修好并在 CI 中硬校验通过。
+当前处于 **M0/M1 完成 + M2 引擎件就位、待真机联调**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、安装记录持久化、启动参数组装都已实现并通过云构建与单测。引擎包已经含 JRE 8/17/21/25、图形 dylib、Java 桥 jar 与 `YZLGameEntry`；**YZL UI 注入件（`YZLUI.framework` 二进制）此前缺失，已修好并在 2026-11-06 的 CI 中硬校验通过，接下来需要真机装包验证进游戏**。2026-11-07 又对照 Android / Windows 端补齐了**皮肤站账号（Yggdrasil 三源）、下载源健康检查、版本导出/删除与 3D 皮肤预览**，见下文日期日志。
 
-2026-11-07 新增：引擎 CI 同时产出 `.tipa` 与**干净未签名** `YZL-engine-sideload-unsigned.ipa`（剥离 ldid 伪签与 TrollStore 私有 entitlement），并用 `scripts/verify_engine_ipa.py` 对两个包做产物完整性硬校验（YZLUI 真 Mach-O、JRE 8/17 真实可用、关键 jar/dylib 齐备、侧载包无签名残留）。
-
-**最大缺口仍是真机联调**：安装 → YZL 界面 → 装版本 → 启动进游戏，这条链路目前一次都没在 iPhone 上跑过。联调清单见 `IOS18-SIDELOAD.md` §8。
+2026-11-06 云构建：外壳最新 commit `e27a174` 编译成功，单测 **139 个 / 1 跳过 / 0 失败**；引擎流水线 `42220940394` 成功，最终 `.tipa` 已带 `Frameworks/YZLUI.framework/YZLUI`。
 
 ## 为什么只能侧载
 
@@ -61,21 +55,29 @@
 | 静态自检 `scripts/preflight.py`（括号 / JSON / plist / 禁用 API / shell / ps1 BOM） | 已实现并接入全部 CI 任务 |
 | `scripts/fetch-ipa.ps1`（Windows 一键触发构建并取回 IPA） | 已实现，PowerShell 5.1 语法校验通过 |
 | **云构建直出 TrollStore `.tipa`（主线）** | 已接入 `build-ipa.yml` / `release-ipa.yml`（ldid 伪签 + artifact + Release 附件），未实跑 |
-| 现代版本参数解析（arguments / minecraftArguments + 占位符替换 + 平台/feature 规则过滤） | 已实现，含单测（ArgumentResolverTests），已编译（云构建通过） |
+| 现代版本参数解析（arguments / minecraftArguments + 占位符替换 + 平台/feature 规则过滤） | 已实现，含单测（ArgumentResolverTests），未编译 |
 | 版本继承合并 VersionMerger（inheritsFrom 拍平，Forge/Fabric 启动前置） | 已实现，含单测（VersionMergerTests）；安装期拍平存盘已接入（`VersionInheritanceResolver` 取回父版本链并逐层落盘，启动不再依赖网络） |
-| Fabric 加载器安装（官方 Meta：加载器列表 → profile → 继承链解析 → Maven 坐标库下载 → 拍平安装） | 已实现，含单测（LoaderInstallTests）；版本页显示已安装加载器版本（fabric-loader-* 合并进清单 + Fabric 徽章）；已编译（云构建通过） |
-| Quilt 加载器安装（meta.quiltmc.org v3，与 Fabric 同链路） | 已实现，含单测（MirrorPolicyTests）；Quilt 条目无 stable 字段，按版本号 beta 兜底；已编译（云构建通过） |
-| 下载源切换（Mojang 官方 / BMCLAPI 镜像） | 已实现，含单测（MirrorPolicyTests）；映射表与 Android 端 Mirrors.kt 一致，端点已实测（清单 278,772 字节、资源对象、fabric-meta 均 200）；清单/详情/Meta/库/资源对象全链路生效；已编译（云构建通过） |
-| 离线皮肤本地导入（相册选图 → 尺寸校验 → Documents/YZLSkins 存 PNG） | 已实现，含单测（MirrorPolicyTests）；`yzl-local-skin://` 引用走本地文件，头像与皮肤页自动生效；微软账号补官网皮肤设置入口；已编译（云构建通过） |
-| 通用自适应（堆上限按可用内存收敛、不按机型出包） | 已实现并补单测，已编译（云构建通过） |
-| 全系统自动分流（6 档，能用免电脑就用免电脑） | 已实现：部署档位判定、JIT 按钮分流、诊断页三行提示、单测；已编译（云构建通过） |
-| **M2-b fork-overlay 架构定案与桥接层** | 已实现：架构决策（`docs/M2B-ENGINE.md`，证据链：原生桥焊在主二进制 / Java 侧自持启动链 / 无官方预编译）；`EnginePayloadLocator` 逐件诊断（含单测）、`EngineLaunchContract` 启动契约（含单测）、`YZLEngineHost` 运行时桥（dlsym + 契约 + SurfaceVC 运行时呈现）、`LauncherEngineFactory` fork↔外壳自动切换；已编译（云构建通过） |
+| Fabric 加载器安装（官方 Meta：加载器列表 → profile → 继承链解析 → Maven 坐标库下载 → 拍平安装） | 已实现，含单测（LoaderInstallTests）；版本页显示已安装加载器版本（fabric-loader-* 合并进清单 + Fabric 徽章）；未编译 |
+| Quilt 加载器安装（meta.quiltmc.org v3，与 Fabric 同链路） | 已实现，含单测（MirrorPolicyTests）；Quilt 条目无 stable 字段，按版本号 beta 兜底；未编译 |
+| 下载源切换（Mojang 官方 / BMCLAPI 镜像） | 已实现，含单测（MirrorPolicyTests）；映射表与 Android 端 Mirrors.kt 一致，端点已实测（清单 278,772 字节、资源对象、fabric-meta 均 200）；清单/详情/Meta/库/资源对象全链路生效；未编译 |
+| 离线皮肤本地导入（相册选图 → 尺寸校验 → Documents/YZLSkins 存 PNG） | 已实现，含单测（MirrorPolicyTests）；`yzl-local-skin://` 引用走本地文件，头像与皮肤页自动生效；微软账号补官网皮肤设置入口；未编译 |
+| 皮肤站账号（LittleSkin / authlib-injector Yggdrasil 全协议） | 已实现：登录 / refresh / sessionserver 材质同步 / 皮肤上传重置（Bearer + multipart）/ 令牌按账号存 Keychain；账号页三源卡片 + 启动自检皮肤站分支，accessToken 进 LaunchPlan；含单测（YggdrasilAuthTests）；未编译 |
+| 下载源健康检查（会话内失败计数 + 候选排序 + 测速） | 已实现（对照 Android 端 SourceHealth）：MetadataFetcher 双源赛跑与分片下载器换源均写入记录、坏源自动排后；设置页新增官方 / 镜像测速；含单测（SourceHealthTests）；未编译 |
+| 版本导出（ZIP 整合包，yzl.modpack.json + PCL/Setup.ini）+ 版本删除 | 已实现（对照 Android 端 VersionExporter）：零依赖 ZIPWriter（store + CRC32），客户端 jar 改名 `{id}.jar` 对齐 PCL 约定，mods / 存档进包、assets / libraries 排除；版本页新增导出 / 删除操作卡；含单测（VersionExporterTests）；未编译 |
+| 3D 皮肤预览（照 Android Skin3DModel 逐行移植的 CPU 画家算法） | 已实现：六部件 UV 表 + 叠加层外扩 + 面光照（构建期烘焙）+ 正交投影深度排序 + 走路摆臂 + 拖动旋转 / 正背面预设；皮肤页 2D 纹理表保留为对照小图；含单测（Skin3DModelTests）；未编译 |
+| **整合包导入（Modrinth .mrpack / CurseForge / YZL / MMC / PCL / 通用 ZIP）** | 已实现：零依赖 ZIPReader（store + deflate，路径穿越防护）；五格式判定与 Windows 端同序同键；mrpack env.client 过滤 + 多 URL 顺序重试；CF 走 MCIM（免 key，downloadUrl 空时拼 edge.forgecdn 规则，classId 目录映射，世界 ZIP 下载后自动解压）；overrides 先 / client-overrides 后覆盖；基础版本自动安装（Fabric/Quilt 走 Meta，原版走清单）+ 全部走既有分片断点续传队列；Forge/NeoForge 依赖明确报错（安装器需运行 Java 字节码）；含单测（ZIPReaderTests / ModpackImporterTests）；未编译 |
+| **微软账号皮肤上传 / 披风管理** | 已实现：POST skins（multipart 字段 **variant**+file）、DELETE skins/active、GET profile、PUT/DELETE capes/active；令牌走 freshSession 保活；上传后同步档案回本地会话；含单测（MicrosoftProfileServiceTests）；未编译 |
+| **模组管理（清单 / 开关 / 删除）** | 已实现：MobileCompat.listMods/setModEnabled/deleteMod（mods ↔ mods-ios-off 搬移，重名不覆盖）；版本页「模组」卡 + 可搜索列表 sheet，与「极端兼容」的中转目录协同；含单测（ModLibraryTests）；未编译 |
+| **皮肤站游戏内皮肤注入（authlib-injector）** | 已实现：latest.json（download_url/version/checksums.sha256）+ jar 按版本缓存 + SHA-256 校验；`-javaagent:<jar>=<apiRoot>` + `-Dauthlibinjector.side=client` 进 LaunchPlan 与 fork 引擎的 jvm_processed；自检新增「皮肤站注入」项（失败降级 warning 不挡启动）；含单测（AuthlibInjectorServiceTests）；未编译 |
+| 关于页更新日志（硬编码历史，与 Windows/Android 同模式） | 已实现（Core/ReleaseNotes.swift + AboutView releaseNotesCard） |
+| 通用自适应（堆上限按可用内存收敛、不按机型出包） | 已实现并补单测，未编译 |
+| **M2-b fork-overlay 架构定案与桥接层** | 已实现：架构决策（`docs/M2B-ENGINE.md`，证据链：原生桥焊在主二进制 / Java 侧自持启动链 / 无官方预编译）；`EnginePayloadLocator` 逐件诊断（含单测）、`EngineLaunchContract` 启动契约（含单测）、`YZLEngineHost` 运行时桥（dlsym + 契约 + SurfaceVC 运行时呈现）、`LauncherEngineFactory` fork↔外壳自动切换；未编译 |
 | **M2-b fork 补丁与引擎 CI** | 已实现：三处补丁（PojavLauncher YZL 分支 / 二进制名解耦 / UI 注入点）+ 幂等应用脚本 + `engine/fork-patches/yzl/YZLGameEntry.java`；实验流水线 `build-engine-ipa.yml`（workflow_dispatch，托管 runner 实测审计 §10 待验证项）；未实跑 |
 | Windows 自签（备用，当前不采用） | 脚本与 entitlement 模板已实现，未用真实证书实跑 |
 
-> 表格状态已于 2026-11-07 统一刷新：此前标注为待编译的条目，现在都已由 GitHub Actions 的 macOS runner 编译并通过单测（`** TEST SUCCEEDED **`，139 个 / 1 跳过 / 0 失败）。
+> 表里的「未编译」指**修复后的整包代码还没在 macOS 上重新编过一次**；09:20 那次云构建已成功生成 Xcode 工程，并编过除 `AvatarView.swift` 以外的全部文件。
 >
-> 本工程在 Windows 上创建，本机没有 Xcode；编译与测试一律走云端 macOS runner。`python3 scripts/preflight.py` 是提交前的静态自检（括号 / JSON / plist / 禁用 API / shell / ps1 BOM），三个 CI 任务都会先跑它。
+> 本工程在 Windows 上创建，本机没有 Xcode 和 Swift 编译器。现在可以先跑 `python3 scripts/preflight.py` 做静态自检（CI 三个任务也都会跑），但**真正的编译验证仍只能在 Mac 或云端 macOS 上完成**：`xcodegen generate` + `xcodebuild` 通过，模拟器能打开主页、版本、账号、设置四个页面并拉到版本列表，且 `LaunchCommandTests` / `RuntimeLocatorTests` / `EngineIntegrationTests` 全绿。
 
 iOS 外壳按安卓已安装版同步：左侧 84pt 图标栏、居中 FCL 式主页、卡片式账号管理页和设备代码登录弹窗。安卓工程本身未做修改；iOS 的默认微软公共客户端 ID 与安卓一致（`00000000402b5328`），自定义 Azure 客户端仍可在设置里覆盖。
 
@@ -85,7 +87,7 @@ iOS 外壳按安卓已安装版同步：左侧 84pt 图标栏、居中 FCL 式�
 - **继续安装**：已完成且 SHA-1 一致的文件直接跳过，未完成的分片从断点续传，不会把 732 MB 从头再下一遍。
 - **启动游戏**：先做启动自检——账户与令牌、安装记录、版本 JSON、客户端 jar、依赖库、资源索引、JRE、JIT、Amethyst 内核、内存——再生成 classpath、主类、JVM 参数和游戏参数（`LaunchPlan`）。全部通过后才交给引擎。
 - 自检面板现在会额外显示一条「启动命令」检查项：`LaunchCommand` 已把 JVM 参数、`-cp`、主类与游戏参数按顺序组装好，令牌只留在内存且展示时脱敏。
-- 引擎包（fork-overlay）已把 JRE 8/17 与 `launchJVM` 打进同一个 App，`LauncherEngineFactory` 在 fork 进程内 `dlsym` 命中后自动切到 `YZLEngineHost` 真启动；纯外壳构建仍走 `AmethystEngine()` 接缝实现并如实报「内核未接入」。启动面板会逐项显示 JRE / JIT / 内核状态，不再含糊地弹一句“还不能启动”。
+- 目前 JRE 二进制与 Amethyst 内核仍属于 M2，所以自检会明确停在「Java 运行时 / 启动内核」两项；按钮不再弹一句“还不能启动”，而是打开可逐项核对的启动面板。接入引擎后只需提供一个 `EngineBridge` 实现并注入 `AmethystEngine`，外壳与启动面板都不用改。
 
 ### 本机已做过的检查（2026-11-04）
 
@@ -205,9 +207,61 @@ Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（An
   线程栈到 `<gameDir>/logs/yzl-stall-<版本>-<n>.log`。下次再卡，直接看线程栈就知道
   是渲染线程、区块构建还是集成服务端 worldgen 在等锁，不用再猜。
 
+### 2026-11-06（四）：引擎 UI 注入件修复 + 主页按钮去重
+
+- 引擎包里的 `YZLUI.framework` 上一版只有 `Info.plist` / `Assets.car`：`YZLUI` target
+  的共享源码引用 `WKWebView`，但没链接 `WebKit.framework`，链接阶段失败；
+  流水线又对该步 `continue-on-error`，于是继续注入了一个空壳 framework。
+- 修复：`project.yml` 给 `YZLUI` 显式加 `- sdk: WebKit.framework`；CI 去掉容错，
+  在构建后、注入后、最终 `.tipa` 三处硬校验 `Frameworks/YZLUI.framework/YZLUI`。
+  2026-11-06 run `42220940394` 通过，产物 106 MB（含 JRE 8/17/21/25）。
+- 主页：未安装版本时大按钮已是「下载游戏」，第二枚小按钮不再重复「下载游戏」，
+  改为「选择版本」；安装中显示「启动自检」，已安装才显示「下载游戏」。
+- 外壳最新构建 `e27a174`：Device IPA + Unit tests 均 success，139 tests / 1 skipped / 0 failures。
+- 预览 `docs/preview/landscape.html` 与 12 张 `docs/preview/shots/*.png` 已同步。
+
 ### 下载管线端到端实测（2026-11-06，真实 Mojang 服务器）
 
 与 iOS 安装器同逻辑的 PowerShell 复刻测试全绿：清单 922 版本 → 1.20.1/1.12.2 详情 → 规则过滤 43/33 条 iOS 适用库（与 11-04 核对值一致）→ 客户端 jar Range 分片下载 23,028,853 字节 + SHA-1 `0c3ec587…` 精确匹配（20.1 MB/s）→ 资源索引 3,598 条 SHA-1 匹配 → 资源对象/依赖库抽样全部哈希吻合。下载、校验、清单语义三层全通。
+
+### 2026-11-07：对照 Android / Windows 端补齐三源账号、源健康检查、版本管理与 3D 皮肤
+
+又是一批「另外两端都有、iOS 缺」的功能，全部纯 Swift、零第三方依赖、可单测：
+
+- **皮肤站账号（Yggdrasil）**：新增 `Core/Auth/YggdrasilAuth.swift`。协议与 Android 端 `SkinStationAuth.kt` 逐字段对齐——`authserver/authenticate|refresh`、sessionserver textures（Base64 JSON：SKIN / CAPE / slim→alex）、皮肤上传与重置（Bearer + multipart，字段顺序同 Android）。`normalizeServer` 让「littleskin.cn」「https://任意服务器」「完整 API Root」都能填。令牌按账号 id 存 Keychain（`YggdrasilSessionStore`，模板同 `AuthSessionStore`），档案 JSON 不含令牌。账号页新增皮肤站区块与登录表单；启动自检加皮肤站分支（每次启动前用 clientToken refresh 一次，网络抖动时保留旧令牌），Yggdrasil accessToken 走 `--accessToken` 进 LaunchPlan——进 authlib-injector 认证服务器即为正版身份（authlib javaagent 注入随引擎联调再接）。
+- **下载源健康检查（SourceHealth）**：新增 `Core/Download/SourceHealth.swift`，与 Android 端同名模块同语义：会话内按 host 记失败次数（4xx 豁免——文件不存在不是源坏了）、成功清零、候选按健康度稳定排序。接入点：`MetadataFetcher` 双源赛跑的胜败记录 + 候选排序；`SegmentedDownloader` 主源失败换 fallback 时记录、用哪个源成功记哪个。设置页「下载源」卡新增**测速**（并发 GET 两源的版本清单，显示 `✓ 96 ms`，结果写入健康记录）与「清空记录」。
+- **版本导出 + 删除**：新增 `Core/Install/VersionExporter.swift`——纯 Swift 手写 ZIP（store 模式 + 查表 CRC32，客户端 jar 本来就是压缩格式不吃亏）。导出格式与 Android 端 `VersionExporter.kt` 逐字一致：zip 根 = 版本目录内容 + `yzl.modpack.json`（format 1）+ `PCL/Setup.ini`；客户端 jar 改名 `{id}.jar` 对齐 PCL 的 `versions/{id}/{id}.jar` 约定；`game/` 整棵进包（mods / saves / config），剔除 `logs`、`crash-reports`、`.yzl-compat-backup` 与隐藏文件；assets / libraries / natives 不进包（接收方按版本 JSON 重新下载）。加载器类型从版本 JSON 推导（fabric-loader / quilt-loader 坐标）。版本详情页新增「版本管理」卡：导出 ZIP（tmp 打包 → `.fileExporter` 选目的地）与删除版本（确认弹窗写明「含模组与存档、不可恢复」，复用已有的 `removeInstalledVersion`）。
+- **3D 皮肤预览**：新增 `Theme/Skin3DModel.swift`（逐行移植 Android `Skin3DModel.kt`）与 `Theme/Skin3DView.swift`。六部件 × 六面 UV 表（含 slim 3px 臂变体与 64×32 legacy 复用右腿）、叠加层外扩（head 0.55 / body 0.3 / 四肢 0.25）、面光照与 Android 同系数——实现方式不同：Android 用 ColorMatrix，iOS 在**构建期**把光照乘进面像素（面只有几像素大），绘制期是纯仿射 blit，正交投影下每面恰是平行四边形（等价 Android 的 `setPolyToPoly` 3 点模式）。画家算法深度排序、走路摆臂（腿 ±26° / 臂 ±22°，每秒 2.4 rad）、拖动旋转与正面/背面/重置预设全部对齐；`TimelineView(.animation)` + `Canvas`（均 iOS 15 可用）驱动，模型只在贴图变化时重建。皮肤解析复用 AvatarView 同一条链（本地 scheme → URL → 程序化默认 Steve 皮肤）。皮肤页的 2D 纹理表保留为对照小图。
+- **测试**：新增 `YggdrasilAuthTests`（地址规范化 / UUID 格式化 / authenticate·refresh·textures 解析 / multipart 体 / 错误文案优先级）、`SourceHealthTests`（计数 / 成功清零 / 4xx 豁免 / host 维度 / 稳定排序）、`VersionExporterTests`（CRC32 已知向量 / ZIP 结构 mini 解析器回读 / 清单字段 / 加载器识别 / 端到端导出与排除规则）、`Skin3DModelTests`（归一化 / UV 表越界与锚点 / 面裁剪与光照烘焙 / 整帧像素断言 / walkPhase 差异）。
+
+### 2026-11-07（二）：M3 第一块——整合包导入 + 微软皮肤/披风 + 模组管理 + authlib 注入
+
+对照 Windows 端 `MainWindow.Modpack.cs` / `MinecraftSkinService.cs` 逐规则移植（协议细节全部实测核对过）：
+
+- **整合包导入**：新增 `Core/Modpack/`（`ZIPReader` + `ModpackImporter`）与 `Features/Versions/ModpackImportSheet.swift`。
+  - ZIPReader：EOCD 尾部扫描（容忍注释）→ 中央目录 → 本地头定位；store + deflate（系统 Compression framework 的 raw deflate）；加密包与 ZIP64 明确报错；解压带路径穿越防护。仓库此前只有 ZIPWriter（上轮写的），读端补齐后导出/导入可自环。
+  - 格式判定与 Windows 同序：`modrinth.index.json` → `yzl.modpack.json` → `mmc-pack.json` → `manifest.json` → `Setup.ini`（PCL）→ 内容目录兜底；允许一层公共顶层前缀与 `.minecraft/` 前缀剥离。**Forge / NeoForge 依赖在识别阶段就报错**（安装器要跑 Java 字节码，Android 端同样不支持，文案一致）。
+  - mrpack：`env.client=="unsupported"` 过滤、`downloads[]` 顺序即重试顺序（主源 + fallback）、按体积降序；CurseForge：MCIM 文件信息（重试 3 次退避）→ `downloadUrl` 为空拼 `edge.forgecdn.net/files/{id/1000}/{id%1000}/{名}` 规则 → mediafilez/edge/MCIM 候选链，classId 映射目录（6→mods、12→resourcepacks、6552→shaderpacks、17→saves、6945→datapacks），世界 ZIP 下载完成后自动解压到 saves 并删源。
+  - 解压顺序与 Windows 一致：overrides 先、client-overrides 后（后者覆盖前者）；跳过 server-overrides、元数据文件、versions/assets/libraries/runtime/logs 等噪音目录；YZL 自家导出 zip 的根上版本 JSON / 客户端 jar 不进 game 目录（基础版本从 Mojang 重装）。
+  - 版本命名 `buildPackID` 照抄 Windows（sanitize / 56 字符截断 / 同包重装复用 / 撞名加 `-MMddHHmm`）；落盘版本 JSON `{id, inheritsFrom: 基础版本, yzlModpack: true, yzlModpackName/Version}` 与 Windows 端同字段。
+  - 基础版本自动安装：Fabric/Quilt 走 Meta profile、原版走 Mojang 清单，经 `VersionInheritanceResolver` 拍平后与 mods 一起进**既有**分片断点续传队列（一次 batchID 全下完，SHA-1 全过才算装完）；`InstallPlanner.makeSpec` 从 private 开放给导入器复用同一条镜像/分片规则。
+  - 版本页新增「导入整合包」入口（UIDocumentPicker 拷贝模式——`.mrpack` 没有 UTType，`.fileImporter` 选不中）+ 预览卡（包名 / MC 版本 / 加载器 / 文件数）+ 队列进度。
+- **微软皮肤 / 披风**：`Core/Auth/MicrosoftProfileService.swift`——上传皮肤的 multipart 字段名是 **`variant`**（slim/classic）+ file（与 Yggdrasil 的 `model` 不同，这是 Windows 端踩过的坑）；恢复默认 = DELETE `skins/active`；装备披风 = PUT `capes/active` body `{"capeId":"..."}`、隐藏 = DELETE；错误文案 `errorMessage→error→errorType→前 220 字符`。皮肤页新增「微软皮肤与披风」卡（上传 / 恢复默认 / 披风列表装备与隐藏），操作后重拉档案同步回本地会话，头像立即更新。
+- **模组管理**：`MobileCompat` 新增 `listMods / setModEnabled / deleteMod`（mods ↔ mods-ios-off 搬移、同名不覆盖、删除静默容错），版本页新增「模组」卡与可搜索的管理列表（开关 = 搬移、滑动删除），「极端兼容」移出的 Sodium / Iris 就在同一份清单里管理。
+- **authlib-injector 注入**：`Core/Auth/AuthlibInjectorService.swift`——latest.json 的字段是 **`download_url` / `version` / `checksums.sha256`**（snake_case，无 sha1），jar 按版本缓存 + SHA-256 校验 + >100KB 粗校验；`-javaagent:<jar>=<apiRoot>` + `-Dauthlibinjector.side=client` 两条参数进 `LaunchPlanBuilder.build`（新增 `authlibArguments` 可选参数），fork 引擎路径由 `YZLEngineHost` 从 LaunchPlan 按前缀显式转发进 `jvm_processed`；启动自检新增「皮肤站注入」项，jar 获取失败降级 warning 不挡启动（与 Windows 端同语义）。到这一步，皮肤站账号的「游戏内显示皮肤 / 进皮肤站认证服务器」链路只剩真机验证。
+- **更新日志**：`Core/ReleaseNotes.swift`（硬编码历史，最新在前）+ 关于页更新日志卡。
+- **测试**：新增 `ZIPReaderTests`（store/deflate 回读、带注释 EOCD、加密拒绝、路径穿越、目录条目；内含测试用 zip 组装器）、`ModpackImporterTests`（五格式判定、env 过滤与 URL 顺序、overrides 覆盖顺序、CF primary 加载器与 required/去重、forge 拦截、rootPrefix、buildPackID 全规则、CF URL 规则与 MCIM 兜底）、`MicrosoftProfileServiceTests`（variant 在 file 前、cape 请求体、profile 解析、错误优先级）、`AuthlibInjectorServiceTests`（latest.json 两种 sha256 形态、参数形状、LaunchPlanBuilder 追加与默认不追加）、`ModLibraryTests`（清单合并排序、开关搬移、重名不覆盖、缺失容错、与极端兼容协同）。
+
+### 2026-11-07（三）：微软正版登录修复——对齐 Windows 端实测可用的授权流程
+
+用户真机反馈「无法登录」。排查过程与结论：
+
+- **服务端探针**（本机直测）：`oauth20_authorize.srf` 对默认客户端返回正常登录页（「Sign in to Minecraft」+ 流程令牌，无 AADSTS 错误）；`oauth20_token.srf` 用无效 code 实测返回标准 OAuth JSON（`invalid_grant`，说明 client_id / redirect_uri / scope 都被接受）。协议端点本身是通的，问题在**流程参数与 Windows 端实测可用版本不一致**。
+- **根因（对照 Windows 端 `MicrosoftAuth.cs` 的 2026-10 实测注释）**：iOS 旧实现用「无 PKCE + 无 prompt + `service::user.auth.xboxlive.com::MBI_SSL` 作用域」发起浏览器授权；而 Windows v2.3.8.1 实跑验证的授权码流程是 **PKCE S256 + `prompt=select_account` + `XboxLive.signin offline_access` 作用域**（MBI_SSL 只用于设备码申请与令牌刷新，第一方应用混用作用域会被微软拒绝）。
+- **修复**：`MicrosoftAuthService` 新增 `makeBrowserLogin()`（每次登录生成 PKCE verifier/challenge + state，参数逐项对齐 Windows `StartLogin`）；`exchangeAuthorizationCode` 增加 `code_verifier` 参数并把交换作用域改为 `browserScope`；`AppState` 用 `pendingCodeVerifier` 在「发起登录 → WebView 拦截回调 → 换令牌」之间携带校验对，取消/完成即清理。XBL 的 RPS ticket 保留裸传与 `d=` 双前缀回退（Windows 实测用 `d=`，iOS 有回退更稳）。
+- **新参数组合已在本机实测**：微软对 PKCE + select_account + XboxLive.signin 作用域的授权页返回 200 正常登录页。
+- **测试**：新增 `BrowserLoginFlowTests`（base64url、授权页参数逐项断言 + challenge=sha256(verifier) 验证 + code_verifier 不得出现在 URL、回调解析、自定义 Azure 客户端返回 nil）。
+- **待真机复测**：登录页 → 选账号 → 授权 → 自动换令牌 → 档案；若仍失败，失败页的「复制错误信息」会带上服务端原始错误（现在错误体里也保留了阶段标注）。
 
 ## 目录结构
 
@@ -333,26 +387,22 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 - **M0（已完成）** 工程骨架、界面、版本清单、构建与侧载文档
 - **M1（已完成）** 微软登录、版本安装、分片断点续传下载器、安装记录、启动自检与 LaunchPlan；云构建通过，单测 139 个全绿
 - **M2（接缝完成）** LaunchCommand / RuntimeLocator / JITProbe / AmethystEngine + EngineBridge 已实现并带单测
-- **M2-b（引擎包完成，待真机联调）** fork-overlay 路线：Amethyst fork + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 兼容补丁。成品含引擎、图形 dylib、Java 桥 jar、**完整可用的 JRE 8 / 17**（各约 102 MB）、`launcher.jar` 内的 `YZLGameEntry`，以及可执行的 `YZLUI.framework`。
-  - **修正（2026-11-06）**：此前一版 `YZLUI.framework` 只有 `Info.plist` / `Assets.car`，缺 Mach-O 二进制（`YZLUI` 源码引用 `WKWebView` 但 framework target 没链接 WebKit，且 CI 对该步 `continue-on-error`）。现已补 `WebKit.framework` 依赖、去掉容错，并硬校验 `Frameworks/YZLUI.framework/YZLUI`；run `42220940394` 通过。
-  - **修正（2026-11-07）**：旧产物 `YZL-engine-unsigned.ipa` 只是把 `.tipa` 复制改名，仍带 ldid 伪签与 TrollStore 私有 entitlement，iOS 18 用 SideStore / 轻松签 重签必然失败。现由 `scripts/make-sideload-ipa.sh` 剥离全部代码签名与私有权限，另产 `YZL-engine-sideload-unsigned.ipa`；`scripts/verify_engine_ipa.py` 对两个包做完整性硬校验并输出报告。
-  - **已知限制**：JRE 21 / 25 因上游 CDN `assets.angelauramc.dev` 失效仍是空壳，**1.21+ 暂不能玩**；JRE 8/17 来自停更的 PojavLauncher iOS v2.2，建议后续换 Amethyst 社区维护版。
-  - **剩余**：真机安装 → 确认进入 YZL 界面 → 安装版本 → 启动进游戏（清单见 `IOS18-SIDELOAD.md` §8）；微软网页授权真机回环；M3 与 GPLv3 衍生开源义务。
+- **M2-b（引擎包完成，待真机联调）** fork-overlay 路线：Amethyst fork + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 兼容补丁。成品 `YZL-engine.tipa` 含引擎、20 个图形 dylib、6 个 Java 桥 jar、**JRE 8/17/21/25 全套**、`launcher.jar` 内的 `YZLGameEntry`，以及可执行的 `YZLUI.framework`。
+  - **修正（2026-11-06）**：此前一版 `YZLUI.framework` 只有 `Info.plist` / `Assets.car`，缺 Mach-O 二进制（`YZLUI` 源码引用 `WKWebView` 但 framework target 没链接 WebKit，且 CI 对该步 `continue-on-error`）。现已补 `WebKit.framework` 依赖、去掉容错，并在注入后与最终 `.tipa` 两处硬校验 `Frameworks/YZLUI.framework/YZLUI`；run `42220940394` 通过。
+  - **剩余**：TrollStore 真机安装 → 确认进入 YZL 界面 → 安装版本 → 启动进游戏。JRE 二进制来自 Pojav iOS v2.2 提取（原 CDN 已失效），后续建议换 Amethyst 社区新版。
 - **M3（未开始）** 模组 / 整合包、三源聚合、联机能力
 
 ## 合规
 
 - 不内置游戏文件，资源从 Mojang 官方获取；用户必须自己拥有 Minecraft。
-- PojavLauncher_iOS 已归档；活跃继任者 Amethyst-iOS 为 GPLv3。M2 复用其 JRE / 启动层后，iOS 端相关部分及衍生作品需要按 GPLv3 开源。纯 SwiftUI 外壳预览包不含上游代码，但**引擎包包含**，详见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。仓库目前仍为私有、缺少 `LICENSE`，**对外分发引擎 IPA 前必须补齐对应源码与许可声明**，这是尚未完成的合规义务。
+- PojavLauncher_iOS 已归档；活跃继任者 Amethyst-iOS 为 GPLv3。M2 复用其 JRE / 启动层后，iOS 端相关部分及衍生作品需要按 GPLv3 开源。目前 M0 外壳不包含上游代码。
 - 与 Mojang、Microsoft、Amethyst / PojavLauncher 团队无隶属关系。
 
 ## 已确定的路线（2026-11-04）
 
 1. **构建环境**：目前只有 Windows。首轮编译走 GitHub Actions 云构建，或临时借用 Mac；本机继续做代码和静态检查。
 2. **引擎路线**：保留自制 SwiftUI 外壳，复用 Pojav 系引擎。PojavLauncher_iOS 已归档，实际底座改用活跃维护的 **Amethyst-iOS**（GPLv3）。与引擎链接的 iOS 端部分按 GPLv3 开源，不再按闭源分发设计。
-3. **测试机与两条并行路线（2026-11-07 更新）**：
-   - **TrollStore 主线（全程零电脑）**：A12+ / iOS 15.0 – 15.4.1 的设备，手机 Safari 用 TrollHelperOTA 装 TrollStore，装 `YZL-engine.tipa`。选型见 `docs/FCL-PARITY.md` §5.1。
-   - **iOS 17.4+ / 18.x 侧载线（本机既有测试机 18.7.8，用户指定优先）**：不折腾巨魔，用 `YZL-engine-sideload-unsigned.ipa` + SideStore 重签 + StikDebug 开 JIT。**不要再把它当「备用机器」**——2026-11-07 起该路线有独立构建产物与文档 `docs/IOS18-SIDELOAD.md`；首次配对仍需电脑，之后手机可自续签。
+3. **测试机（2026-11-05 已决策）**：为做到**全程免电脑**，选一台 **A12+ / iOS 15.0 – 15.4.1** 的设备，用 **TrollHelperOTA** 在手机 Safari 里装 TrollStore（不用电脑、不用 Apple ID）；到手先关自动更新、别升级。选型与操作步骤见 `docs/FCL-PARITY.md` §5.1。原 iOS 18.7.8 保留作免费 Apple ID 自签的备用机器。
 4. **界面方向**：2026-11-04 晚改为固定横屏，主页/账户/关于/版本详情统一双列；竖屏布局不再维护。
 
 引擎接缝审计见 `docs/POJAV-ENGINE-AUDIT.md`（已完成初步审计）。

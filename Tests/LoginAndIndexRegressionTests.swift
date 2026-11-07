@@ -2,17 +2,18 @@ import XCTest
 @testable import YZLLauncher
 
 /// 两个真机回归：
-/// 1) 资源索引在镜像模式下必须保持官方地址，且获取失败能回退到另一条源；
+/// 1) 资源索引在镜像模式下优先走 BMCLAPI、官方地址必须保留为回退；
 /// 2) 默认公共客户端必须走 v1.0 网页授权码流，设备码流只能用于自定义 Azure 应用。
 final class LoginAndIndexRegressionTests: XCTestCase {
 
     // MARK: - 资源索引
 
-    func testAssetIndexCandidatesDedupeToOfficial() throws {
+    func testAssetIndexCandidatesUseMirrorAndOfficialFallback() throws {
         let index = try XCTUnwrap(URL(string: "https://piston-meta.mojang.com/v1/packages/abc/5.json"))
         let candidates = AssetIndexService.candidateURLs(for: index, sources: [.mirror, .official])
-        XCTAssertEqual(candidates.count, 1, "索引只走官方，两个源应去重成一个")
-        XCTAssertEqual(candidates.first?.host, "piston-meta.mojang.com")
+        XCTAssertEqual(candidates.count, 2, "镜像与官方是两条不同地址，不能去重掉回退源")
+        XCTAssertEqual(candidates[0].host, "bmclapi2.bangbang93.com")
+        XCTAssertEqual(candidates[1].host, "piston-meta.mojang.com")
     }
 
     func testOrdinaryFileHasPrimaryAndFallbackSources() throws {

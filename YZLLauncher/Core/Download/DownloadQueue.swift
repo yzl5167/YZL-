@@ -142,6 +142,19 @@ final class DownloadQueue: ObservableObject {
         var failures: [String] = []
         var sawCancellation = false
 
+        // 之前只在「某个文件下完」时刷新 doneBytes：16 个并发大文件时，
+        // 进度条可能几分钟不动，速度看起来像 0。这里按 0.3s 把实时字节数刷进 UI。
+        let ticker = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard let self, self.state.phase == .running else { return }
+                let snapshot = counter.snapshot()
+                self.state.doneBytes = snapshot.bytes
+                self.state.doneFiles = snapshot.count
+            }
+        }
+        defer { ticker.cancel() }
+
         await withTaskGroup(of: FileOutcome.self) { group in
             while inflight < fileConcurrency, let first = pending.first {
                 pending.removeFirst()

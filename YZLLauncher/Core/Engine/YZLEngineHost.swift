@@ -73,6 +73,18 @@ struct YZLEngineHost: LauncherEngine {
         let document = try EngineLaunchContract.document(from: plan, accessToken: accessToken)
         try EngineLaunchContract.write(document, homeDirectory: home)
 
+        // 1.5 移动端适配 + 真实堆大小。
+        // 这两步都必须在 JVM 起来之前完成：Amethyst 的 -Xmx 是在 launchJVM 里读偏好算的，
+        // 偏好写晚了就还是按「物理内存 25%」跑——几百个模组的整合包会在加载地形时 GC 到死。
+        let compat = MobileCompat.Settings.load()
+        if compat.enabled {
+            let report = try? MobileCompat.apply(to: plan.gameDirectory, aggressive: compat.aggressive)
+            if let report = report, !report.isEmpty {
+                print("[YZL] 移动端适配：\n\(report.summary)")
+            }
+        }
+        try AmethystPreferences.apply(heapMB: plan.memoryMB, homeDirectory: home)
+
         // 2. 环境变量：AME_HOME（fork 主目录约定）与契约路径。
         setenv("AME_HOME", home.path, 1)
         setenv("YZL_LAUNCH_PLAN", home.appendingPathComponent("yzl-launch-plan.json").path, 1)
@@ -93,17 +105,24 @@ struct YZLEngineHost: LauncherEngine {
         //    JLI_Launch 阻塞当前线程直到游戏退出——必须离开主线程
         //    （Amethyst 原生流程同样从后台线程调用）。
         //    launchTarget 走字典（profile 模式）；fork 的 PojavLauncher 补丁读
-        //    YZL_LAUNCH_PLAN，这里只带版本 id 与空 jvm_processed。
+        //    YZL_LAUNCH_PLAN，这里带版本 id 与真正要生效的 JVM 参数。
         typealias LaunchJVM = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?, Int32, Int32, Int32) -> Int32
         let launch = unsafeBitCast(launchSymbol, to: LaunchJVM.self)
         let username = plan.accountName
+        // jvm_processed 是 Amethyst 唯一开放给我们追加 JVM 参数的入口（拼在它自己的
+        // -Xmx 之后，最后一条生效）。只放堆与 GC，不转发实例里那份 Windows natives 路径。
+        let jvmArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
+        // 皮肤站账号的 authlib-injector 参数要进 fork 引擎：从 LaunchPlan 的 jvmArguments
+        // 里显式挑出注入相关的两条（EngineJVMArguments 黑名单不含 -javaagent，
+        // 这里按前缀过滤转发，其余参数照旧不转发）。
+        let authlibArguments = plan.jvmArguments.filter(AuthlibInjector.isInjectorArgument)
 
         let exitCode: Int32 = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let nsName = username as NSString
                 let target: NSDictionary = [
                     "id": plan.version.id,
-                    "arguments": ["jvm_processed": NSArray()]
+                    "arguments": ["jvm_processed": jvmArguments + authlibArguments]
                 ]
                 let code = launch(
                     Unmanaged.passUnretained(nsName).toOpaque(),

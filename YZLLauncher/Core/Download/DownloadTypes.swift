@@ -3,6 +3,9 @@ import Foundation
 struct DownloadSpec: Codable, Equatable {
     let id: String
     let url: URL
+    /// 主源失败（HTTP 错误 / 连接被重置 / 超时）后自动换这条源重试。
+    /// 资源索引与元数据是双源并发，文件下载走主源 → 备用源兜底。
+    let fallbackURL: URL?
     let destination: URL
     let expectedSHA1: String?
     let expectedSize: Int64?
@@ -11,6 +14,7 @@ struct DownloadSpec: Codable, Equatable {
 
     init(id: String,
          url: URL,
+         fallbackURL: URL? = nil,
          destination: URL,
          expectedSHA1: String?,
          expectedSize: Int64?,
@@ -18,11 +22,26 @@ struct DownloadSpec: Codable, Equatable {
          maxConnections: Int = 8) {
         self.id = id
         self.url = url
+        self.fallbackURL = fallbackURL
         self.destination = destination
         self.expectedSHA1 = expectedSHA1
         self.expectedSize = expectedSize
         self.segmentSize = segmentSize
         self.maxConnections = min(max(maxConnections, 1), 16)
+    }
+
+    /// 换成备用源时保留分片/大小信息，但不再保留备用源本身，避免来回循环。
+    func replacingURL(_ newURL: URL) -> DownloadSpec {
+        DownloadSpec(
+            id: id,
+            url: newURL,
+            fallbackURL: nil,
+            destination: destination,
+            expectedSHA1: expectedSHA1,
+            expectedSize: expectedSize,
+            segmentSize: segmentSize,
+            maxConnections: maxConnections
+        )
     }
 }
 

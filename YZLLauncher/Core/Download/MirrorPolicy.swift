@@ -53,22 +53,17 @@ enum MirrorPolicy {
         ("https://maven.neoforged.net/releases/", "https://bmclapi2.bangbang93.com/maven/")
     ]
 
-    /// BMCLAPI 不镜像 Mojang 的 `/v1/packages/...` 资源索引：实测该路径稳定
-    /// TLS 断开（4/4 失败），而官方源稳定返回 ~400 KB JSON。命中时保持官方地址，
-    /// 否则默认镜像会让每个版本的安装都卡在「资源索引获取失败」。
-    private static let unmirroredPathPrefixes = ["v1/packages/"]
-
     /// 按下载源改写地址；官方源原样返回，不在映射表里的 host 也原样返回。
     /// `source` 传 nil 时读当前设置；单测传显式值保证确定性。
+    ///
+    /// 资源索引（`/v1/packages/...`）也走镜像：BMCLAPI 该路径曾出现 TLS 抖动，
+    /// 但现在能正常返回；即使再次失败，调用方会立刻回退官方源，比只留一条路更稳。
     static func rewrite(_ url: URL, source: DownloadSource? = nil) -> URL {
         let active = source ?? current
         guard active == .mirror else { return url }
         let raw = url.absoluteString
         for mapping in mirrorMappings where raw.hasPrefix(mapping.prefix) {
             let suffix = String(raw.dropFirst(mapping.prefix.count))
-            if unmirroredPathPrefixes.contains(where: { suffix.hasPrefix($0) }) {
-                return url
-            }
             if let rewritten = URL(string: mapping.replacement + suffix) {
                 return rewritten
             }

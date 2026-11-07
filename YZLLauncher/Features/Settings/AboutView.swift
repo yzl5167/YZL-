@@ -9,6 +9,7 @@ struct AboutView: View {
                     VStack(spacing: 14) {
                         brandCard
                         milestoneCard
+                        releaseNotesCard
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
 
@@ -58,9 +59,40 @@ struct AboutView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
                 milestone(index: 0, text: "工程骨架、界面、版本清单", done: true)
-                milestone(index: 1, text: "微软登录、版本安装、下载器、启动自检")
+                milestone(index: 1, text: "微软登录、版本安装、下载器、启动自检", done: true)
                 milestone(index: 2, text: "JRE + 启动内核，进入主菜单")
-                milestone(index: 3, text: "模组 / 整合包与联机")
+                milestone(index: 3, text: "整合包 / 模组（联机待做）", done: true)
+            }
+        }
+    }
+
+    /// 更新日志（硬编码历史，与 Windows / Android 端同模式）。
+    private var releaseNotesCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("更新日志")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                ForEach(Array(ReleaseNotes.history.enumerated()), id: \.offset) { _, entry in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 7) {
+                            Text("v\(entry.version)")
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(YZLTheme.text)
+                            if entry.version == ReleaseNotes.currentVersion {
+                                StatusBadge(text: "当前", tone: .success)
+                            }
+                        }
+                        ForEach(Array(entry.items.enumerated()), id: \.offset) { _, item in
+                            Text("• \(item)")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(YZLTheme.muted)
+                                .lineSpacing(3)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }

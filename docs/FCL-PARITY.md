@@ -22,8 +22,9 @@ FCL（Fold Craft Launcher）是**安卓**平台的 Minecraft Java 版启动器�
 | JVM 后端 | Amethyst-Android（Pojav 系） | **Amethyst-iOS**（同一生态的 iOS 分支，M2-b 待接） | ⚠️ 同宗，未接入 |
 | Java 运行时 | 内置 Java 8/17/21/25 | 待随 Amethyst 内核放入 `java_runtimes/`（M2-b） | ⚠️ 未接入 |
 | 版本安装 | 下载页面选版本 / 加载器 | Mojang 清单 + Fabric / Quilt 加载器（官方 Meta）+ BMCLAPI 镜像 + 分片断点续传 + 整包安装 | ✅ 已实现（Forge/NeoForge 待接） |
-| 皮肤 | 本地导入 / 皮肤站 / 官方 | 离线本地导入（相册 + 尺寸校验）/ Mojang 档案读取 / 官网引导 | ✅ 已实现（皮肤站账号待接） |
-| 账号 | 离线 / 微软正版 | 设备代码流 + Keychain | ✅ 已实现 |
+| 整合包 | Modrinth / CurseForge / 本地 ZIP 导入 | **Modrinth .mrpack / CurseForge（MCIM）/ YZL / MMC / PCL / 通用 ZIP 导入**：本地内容解压 + 在线文件走同一条分片断点续传队列 + 基础版本自动安装 + 模组开关管理（Forge/NeoForge 依赖不支持，识别即报错） | ✅ 已实现（模组市场浏览待做） |
+| 皮肤 | 本地导入 / 皮肤站 / 官方 | 离线本地导入（相册 + 尺寸校验）/ Mojang 档案读取 / **微软皮肤上传 + 披风管理** / **皮肤站 sessionserver 同步 + 上传/重置** / 3D 预览 | ✅ 已实现 |
+| 账号 | 离线 / 微软正版 / 皮肤站 | 微软浏览器授权码流 + Keychain / 离线 UUID / **皮肤站 Yggdrasil（LittleSkin 等自定义 API Root）+ authlib-injector 游戏内注入** | ✅ 已实现（三源聚合） |
 | 分发 | 直接装 APK | **IPA 必须签名**；主线出 `.tipa` 给 TrollStore | ❌ 平台差异 |
 | JIT | Android 默认允许 | iOS 沙箱默认禁止，需 TrollStore 或调试器附加 | ❌ 平台差异 |
 | 有效期 | 永久 | TrollStore 永久；免费 Apple ID 仅 7 天 | ❌ 平台差异 |

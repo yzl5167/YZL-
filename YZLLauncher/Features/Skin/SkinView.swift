@@ -5,6 +5,27 @@ struct SkinView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showPhotoPicker = false
     @State private var skinErrorMessage: String?
+    /// 相册选图的去向：离线账号本地导入，或皮肤站上传。
+    @State private var pickerTarget: PhotoTarget = .offlineImport
+    @State private var uploadModel = "classic"
+    @State private var isYggdrasilBusy = false
+    @State private var yggdrasilMessage: String?
+    /// 3D 预览的当前视角（拖动 / 预设按钮共用）。
+    @State private var yaw3D: CGFloat = Skin3DView.defaultYaw
+    @State private var pitch3D: CGFloat = Skin3DView.defaultPitch
+    /// 微软账号的皮肤上传 / 披风管理状态。
+    @State private var microsoftVariant = "classic"
+    @State private var microsoftCapes: [MinecraftCape] = []
+    @State private var isLoadingCapes = false
+    @State private var isMicrosoftBusy = false
+    @State private var microsoftMessage: String?
+
+    /// 相册选图的三条去向。
+    private enum PhotoTarget {
+        case offlineImport
+        case yggdrasilUpload
+        case microsoftUpload
+    }
 
     var body: some View {
         ZStack {
@@ -18,6 +39,14 @@ struct SkinView: View {
                         if let account = appState.displayAccount {
                             accountCard(account)
                             skinCard(account)
+                            if appState.activeYggdrasilAccount != nil {
+                                yggdrasilSkinCard
+                            }
+                            if appState.account != nil,
+                               appState.activeYggdrasilAccount == nil,
+                               appState.activeOfflineAccount == nil {
+                                microsoftSkinCard(account)
+                            }
                             if appState.activeOfflineAccount != nil {
                                 offlineSkinCard(account)
                             }
@@ -43,9 +72,358 @@ struct SkinView: View {
         }
         .sheet(isPresented: $showPhotoPicker) {
             SkinPhotoPicker { image in
-                importSkin(image)
+                handlePickedImage(image)
             }
             .ignoresSafeArea()
+        }
+    }
+
+    /// 相册选图按入口分流：皮肤站卡发起 → 上传皮肤站；微软卡发起 → 上传微软；
+    /// 离线卡发起 → 本地导入。
+    private func handlePickedImage(_ image: UIImage) {
+        switch pickerTarget {
+        case .yggdrasilUpload:
+            uploadSkinToYggdrasil(image)
+        case .microsoftUpload:
+            uploadSkinToMicrosoft(image)
+        case .offlineImport:
+            importSkin(image)
+        }
+    }
+
+    // MARK: - 微软账号（Mojang 官方皮肤 / 披风，对照 Windows 端 MinecraftSkinService）
+
+    private var microsoftSkinCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("微软皮肤与披风")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                Text("直接上传皮肤到 Mojang 官方档案、恢复默认皮肤，或更换披风；改动会同步到所有平台。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+
+                Picker("模型", selection: $microsoftVariant) {
+                    Text("Steve（经典）").tag("classic")
+                    Text("Alex（纤细）").tag("slim")
+                }
+                .pickerStyle(.segmented)
+                .disabled(isMicrosoftBusy)
+
+                HStack(spacing: 10) {
+                    Button {
+                        pickerTarget = .microsoftUpload
+                        skinErrorMessage = nil
+                        microsoftMessage = nil
+                        showPhotoPicker = true
+                    } label: {
+                        Label("上传皮肤", systemImage: "photo.on.rectangle.angled")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: true))
+                    .disabled(isMicrosoftBusy)
+
+                    Button {
+                        resetMicrosoftSkin()
+                    } label: {
+                        Text("恢复默认")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .disabled(isMicrosoftBusy)
+                }
+
+                capeSection
+
+                if let message = microsoftMessage {
+                    Text(message)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(YZLTheme.text)
+                        .lineSpacing(3)
+                }
+            }
+        }
+        .task {
+            await loadMicrosoftProfile()
+        }
+    }
+
+    @ViewBuilder
+    private var capeSection: some View {
+        if isLoadingCapes {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("正在读取披风列表…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(YZLTheme.muted)
+            }
+        } else if microsoftCapes.isEmpty {
+            Text("这个账号还没有披风。")
+                .font(.system(size: 11))
+                .foregroundStyle(YZLTheme.lightMuted)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("披风")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+                ForEach(microsoftCapes) { cape in
+                    capeRow(cape)
+                }
+            }
+        }
+    }
+
+    private func capeRow(_ cape: MinecraftCape) -> some View {
+        HStack(spacing: 10) {
+            if let url = cape.url.flatMap(URL.init(string:)) {
+                AsyncImage(url: url) { phase in
+                    // phase.image 是 SwiftUI.Image，直接用（AvatarView 的踩坑记录）。
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .interpolation(.none)
+                            .scaledToFit()
+                            .frame(height: 40)
+                    } else {
+                        Color.clear.frame(height: 40)
+                    }
+                }
+                .frame(width: 32)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cape.alias ?? cape.id)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(YZLTheme.text)
+                Text(cape.isActive ? "正在装备" : "未装备")
+                    .font(.system(size: 10))
+                    .foregroundStyle(YZLTheme.muted)
+            }
+
+            Spacer()
+
+            Button(cape.isActive ? "取消装备" : "装备") {
+                toggleCape(cape)
+            }
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(cape.isActive ? YZLTheme.danger : YZLTheme.accentText)
+            .buttonStyle(.plain)
+            .disabled(isMicrosoftBusy)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(YZLTheme.field)
+        )
+    }
+
+    private func loadMicrosoftProfile() async {
+        guard let token = await appState.microsoftTokenForProfileActions() else {
+            microsoftMessage = "登录已过期，请到「账号」重新登录。"
+            return
+        }
+        isLoadingCapes = true
+        defer { isLoadingCapes = false }
+        do {
+            let profile = try await MicrosoftProfileService().fetchProfile(token: token)
+            microsoftCapes = profile.capes
+            appState.applyMicrosoftProfile(skinURL: profile.skinURL)
+        } catch {
+            microsoftMessage = error.localizedDescription
+        }
+    }
+
+    private func uploadSkinToMicrosoft(_ image: UIImage) {
+        guard let png = image.pngData() else {
+            microsoftMessage = "无法把所选图片转成 PNG。"
+            return
+        }
+        runMicrosoftAction("皮肤已上传到 Mojang 档案。") { token, service in
+            try await service.uploadSkin(token: token, pngData: png, variant: microsoftVariant)
+        }
+    }
+
+    private func resetMicrosoftSkin() {
+        runMicrosoftAction("已恢复为微软默认皮肤。") { token, service in
+            try await service.resetSkin(token: token)
+        }
+    }
+
+    private func toggleCape(_ cape: MinecraftCape) {
+        runMicrosoftAction(cape.isActive ? "已隐藏披风。" : "已装备披风 \(cape.alias ?? cape.id)。") { token, service in
+            if cape.isActive {
+                try await service.hideCape(token: token)
+            } else {
+                try await service.equipCape(token: token, capeID: cape.id)
+            }
+        }
+    }
+
+    /// 微软档案操作的统一骨架：拿保活令牌 → 执行 → 刷新档案（皮肤 URL + 披风列表）。
+    private func runMicrosoftAction(_ successMessage: String,
+                                    _ action: @escaping (String, MicrosoftProfileService) async throws -> Void) {
+        guard !isMicrosoftBusy else { return }
+        isMicrosoftBusy = true
+        microsoftMessage = nil
+        Task { @MainActor in
+            defer { isMicrosoftBusy = false }
+            guard let token = await appState.microsoftTokenForProfileActions() else {
+                microsoftMessage = "登录已过期，请到「账号」重新登录。"
+                return
+            }
+            let service = MicrosoftProfileService()
+            do {
+                try await action(token, service)
+                let profile = try await service.fetchProfile(token: token)
+                microsoftCapes = profile.capes
+                appState.applyMicrosoftProfile(skinURL: profile.skinURL)
+                microsoftMessage = successMessage
+            } catch {
+                microsoftMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - 皮肤站账号（Yggdrasil 上传 / 重置 / 披风）
+
+    private var yggdrasilSkinCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("皮肤站皮肤")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                if let skin = appState.activeYggdrasilAccount {
+                    Text("当前皮肤站账号：\(skin.name) · \(skin.serverHost)。皮肤与披风从皮肤站 sessionserver 同步，也可以在这里上传或重置。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineSpacing(3)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            pickerTarget = .yggdrasilUpload
+                            skinErrorMessage = nil
+                            yggdrasilMessage = nil
+                            showPhotoPicker = true
+                        } label: {
+                            Label("上传皮肤", systemImage: "photo.on.rectangle.angled")
+                        }
+                        .buttonStyle(PrimaryButtonStyle(prominent: true))
+                        .disabled(isYggdrasilBusy)
+
+                        Button {
+                            resetYggdrasilSkin()
+                        } label: {
+                            Text("重置默认")
+                        }
+                        .buttonStyle(PrimaryButtonStyle(prominent: false))
+                        .disabled(isYggdrasilBusy)
+                    }
+
+                    Picker("模型", selection: $uploadModel) {
+                        Text("Steve（经典）").tag("classic")
+                        Text("Alex（纤细）").tag("slim")
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isYggdrasilBusy)
+
+                    if let cape = skin.capeURL, let url = URL(string: cape) {
+                        HStack(spacing: 10) {
+                            Text("披风")
+                                .font(.system(size: 12))
+                                .foregroundStyle(YZLTheme.text)
+                            Spacer()
+                            AsyncImage(url: url) { phase in
+                                // phase.image 是 SwiftUI.Image，直接用（AvatarView 的踩坑记录）。
+                                if let image = phase.image {
+                                    image
+                                        .resizable()
+                                        .interpolation(.none)
+                                        .scaledToFit()
+                                        .frame(height: 64)
+                                } else {
+                                    ProgressView()
+                                        .frame(height: 64)
+                                }
+                            }
+                            .frame(width: 52)
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(YZLTheme.field)
+                        )
+                    }
+
+                    if let message = yggdrasilMessage {
+                        Text(message)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(YZLTheme.text)
+                            .lineSpacing(3)
+                    }
+                }
+            }
+        }
+    }
+
+    private func uploadSkinToYggdrasil(_ image: UIImage) {
+        guard let skin = appState.activeYggdrasilAccount else {
+            yggdrasilMessage = "请先在账号里选择一个皮肤站账号。"
+            return
+        }
+        guard let token = YggdrasilSessionStore().load(accountID: skin.id)?.accessToken, !token.isEmpty else {
+            yggdrasilMessage = "皮肤站登录已失效，请到「账号」重新登录。"
+            return
+        }
+        guard let png = image.pngData() else {
+            yggdrasilMessage = "无法把所选图片转成 PNG。"
+            return
+        }
+
+        isYggdrasilBusy = true
+        yggdrasilMessage = nil
+        let service = YggdrasilAuthService()
+        Task { @MainActor in
+            do {
+                try await service.uploadSkin(
+                    server: skin.serverURL,
+                    rawUUID: skin.rawUUID,
+                    accessToken: token,
+                    model: uploadModel,
+                    imageData: png
+                )
+                if let textures = await service.fetchTextures(server: skin.serverURL, rawUUID: skin.rawUUID) {
+                    appState.updateYggdrasilAccount(skin.updatingTextures(textures))
+                }
+                yggdrasilMessage = "皮肤已上传并重新同步。"
+            } catch {
+                yggdrasilMessage = error.localizedDescription
+            }
+            isYggdrasilBusy = false
+        }
+    }
+
+    private func resetYggdrasilSkin() {
+        guard let skin = appState.activeYggdrasilAccount else { return }
+        guard let token = YggdrasilSessionStore().load(accountID: skin.id)?.accessToken, !token.isEmpty else {
+            yggdrasilMessage = "皮肤站登录已失效，请到「账号」重新登录。"
+            return
+        }
+
+        isYggdrasilBusy = true
+        yggdrasilMessage = nil
+        let service = YggdrasilAuthService()
+        Task { @MainActor in
+            do {
+                try await service.resetSkin(server: skin.serverURL, rawUUID: skin.rawUUID, accessToken: token)
+                if let textures = await service.fetchTextures(server: skin.serverURL, rawUUID: skin.rawUUID) {
+                    appState.updateYggdrasilAccount(skin.updatingTextures(textures))
+                }
+                yggdrasilMessage = "已重置为皮肤站默认皮肤。"
+            } catch {
+                yggdrasilMessage = error.localizedDescription
+            }
+            isYggdrasilBusy = false
         }
     }
 
@@ -75,6 +453,7 @@ struct SkinView: View {
                     .lineSpacing(3)
 
                 Button {
+                    pickerTarget = .offlineImport
                     skinErrorMessage = nil
                     showPhotoPicker = true
                 } label: {
@@ -119,14 +498,13 @@ struct SkinView: View {
     private var noticeCard: some View {
         YZLCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text(appState.activeOfflineAccount != nil
-                     ? "皮肤只在 Mojang 档案或本机里读取；离线账号的本地皮肤不会上传。"
-                     : "皮肤只在 Mojang 档案里读取；启动器本身不上传或修改皮肤。微软账号请到官网更换。")
+                Text(noticeText)
                     .font(.system(size: 10.5))
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
 
-                if appState.activeOfflineAccount == nil, appState.displayAccount != nil {
+                if appState.activeOfflineAccount == nil, appState.activeYggdrasilAccount == nil,
+                   appState.displayAccount != nil {
                     Link(destination: URL(string: "https://www.minecraft.net/profile")!) {
                         Text("打开 minecraft.net 皮肤设置")
                     }
@@ -134,6 +512,16 @@ struct SkinView: View {
                 }
             }
         }
+    }
+
+    private var noticeText: String {
+        if appState.activeYggdrasilAccount != nil {
+            return "皮肤站账号的皮肤从皮肤站 sessionserver 同步，可在这里上传 / 重置；联机时由 authlib 认证服务器读取。"
+        }
+        if appState.activeOfflineAccount != nil {
+            return "皮肤只在 Mojang 档案或本机里读取；离线账号的本地皮肤不会上传。"
+        }
+        return "皮肤与披风从 Mojang 档案读取，也可以直接在这里上传 / 更换，改动对所有平台生效。"
     }
 
     private var pageHeader: some View {
@@ -161,6 +549,13 @@ struct SkinView: View {
         .background(YZLTheme.page.opacity(0.96))
     }
 
+    /// 按当前账号类型说明皮肤来源（与账号页三源一一对应）。
+    private func skinSourceText(for account: MicrosoftAccount) -> String {
+        if appState.activeYggdrasilAccount != nil { return "皮肤来源：皮肤站 sessionserver" }
+        if appState.activeOfflineAccount != nil { return "皮肤来源：本机导入或默认占位" }
+        return "皮肤来源：Mojang 档案"
+    }
+
     private func accountCard(_ account: MicrosoftAccount) -> some View {
         YZLCard {
             HStack(spacing: 14) {
@@ -172,7 +567,7 @@ struct SkinView: View {
                             .foregroundStyle(YZLTheme.text)
                         StatusBadge(text: "当前", tone: .success)
                     }
-                    Text("皮肤来源：Mojang 档案")
+                    Text(skinSourceText(for: account))
                         .font(.system(size: 10.5))
                         .foregroundStyle(YZLTheme.muted)
                     Text(account.skinURL ?? "当前账号没有皮肤 URL")
@@ -186,6 +581,7 @@ struct SkinView: View {
         }
     }
 
+    /// 皮肤预览：3D 模型为主（拖动旋转 + 走路动画），右侧保留纹理表小图作对照。
     private func skinCard(_ account: MicrosoftAccount) -> some View {
         YZLCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -193,24 +589,57 @@ struct SkinView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
 
-                HStack(alignment: .top, spacing: 20) {
-                    SkinBodyView(size: 156, account: account)
-                        .frame(width: 156, height: 156)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(YZLTheme.border, lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.045), radius: 8, x: 0, y: 4)
+                HStack(alignment: .top, spacing: 16) {
+                    Skin3DView(
+                        account: account,
+                        skinModel: skinModelForPreview,
+                        canvasSize: 210,
+                        yawDeg: $yaw3D,
+                        pitchDeg: $pitch3D
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(YZLTheme.field)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(YZLTheme.border, lineWidth: 1)
+                    )
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(appState.activeOfflineAccount != nil
-                             ? "这是当前离线账号的皮肤贴图（本地导入或默认占位）。"
-                             : "这是从 Mojang 档案里读到的 64×64 皮肤贴图。")
+                        Text("拖动旋转 · 自动走路摆臂")
                             .font(.system(size: 11))
                             .foregroundStyle(YZLTheme.muted)
-                            .lineSpacing(3)
-                        Text("启动内核接入后，M2 会把它用到 Amethyst 的皮肤渲染层。")
+
+                        HStack(spacing: 8) {
+                            Button("正面") {
+                                yaw3D = 0
+                                pitch3D = 4
+                            }
+                            .buttonStyle(PrimaryButtonStyle(prominent: false))
+
+                            Button("背面") {
+                                yaw3D = 180
+                                pitch3D = 4
+                            }
+                            .buttonStyle(PrimaryButtonStyle(prominent: false))
+
+                            Button("重置") {
+                                yaw3D = Skin3DView.defaultYaw
+                                pitch3D = Skin3DView.defaultPitch
+                            }
+                            .buttonStyle(PrimaryButtonStyle(prominent: false))
+                        }
+
+                        SkinBodyView(size: 88, account: account)
+                            .frame(width: 88, height: 88)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(YZLTheme.border, lineWidth: 1)
+                            )
+
+                        Text(skinCardNote)
                             .font(.system(size: 10))
                             .foregroundStyle(YZLTheme.lightMuted)
                             .lineSpacing(3)
@@ -219,6 +648,22 @@ struct SkinView: View {
                 }
             }
         }
+    }
+
+    private var skinModelForPreview: String {
+        appState.activeYggdrasilAccount?.skinModel
+            ?? appState.activeOfflineAccount?.skinModel
+            ?? "steve"
+    }
+
+    private var skinCardNote: String {
+        if appState.activeYggdrasilAccount != nil {
+            return "贴图来自皮肤站 sessionserver。"
+        }
+        if appState.activeOfflineAccount != nil {
+            return "贴图来自本地导入或默认占位。"
+        }
+        return "贴图来自 Mojang 档案。"
     }
 
     private var emptyCard: some View {

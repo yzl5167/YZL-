@@ -1,7 +1,0 @@
-# 云端 macOS runner 直接执行这些文件；CRLF 会让 bash 报 bad interpreter，
-# 也会让 python / YAML 解析出隐蔽错误。仓库内一律强制 LF。
-*.sh   text eol=lf
-*.py   text eol=lf
-*.yml  text eol=lf
-*.yaml text eol=lf
-*.ps1  text eol=crlf
