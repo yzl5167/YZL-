@@ -16,12 +16,14 @@
 
 import argparse
 import re
+import struct
 import sys
 import zipfile
 from collections import defaultdict
 
-MACHO_MAGIC = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf",
-               b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe\x7fELF")
+MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+                b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
 PRIVATE_KEYS = (
     b"com.apple.private.security.no-sandbox",
     b"platform-application",
@@ -29,6 +31,54 @@ PRIVATE_KEYS = (
     b"com.apple.private.skip-library-validation",
     b"dynamic-codesigning",
 )
+LC_CODE_SIGNATURE = 0x1D
+
+
+def macho_has_code_signature(data):
+    """判断 Mach-O 是否带 LC_CODE_SIGNATURE；非 Mach-O 返回 None。
+
+    entitlement 只有作为代码签名 blob 的一部分才具备权限效力。因此
+    「无 LC_CODE_SIGNATURE」是比「字节里有没有 entitlement 字符串」更准确的
+    判据——上游常把 entitlement 名作为字符串常量编译进 __TEXT。
+    """
+    if len(data) < 32:
+        return None
+    magic = data[:4]
+    if magic in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"):
+        nfat = struct.unpack(">I", data[4:8])[0]
+        stride = 32 if magic == b"\xca\xfe\xba\xbf" else 20
+        off_at = 8 if stride == 20 else 16
+        for index in range(min(nfat, 8)):
+            base = 8 + index * stride
+            if base + stride > len(data):
+                break
+            offset = struct.unpack(">I", data[base + off_at:base + off_at + 4])[0]
+            size = struct.unpack(">I", data[base + off_at + 4:base + off_at + 8])[0]
+            if offset + size > len(data):
+                continue
+            if macho_has_code_signature(data[offset:offset + size]):
+                return True
+        return False
+    if magic in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe"):
+        endian = "<"
+        header = 32 if magic == b"\xcf\xfa\xed\xfe" else 28
+    elif magic in (b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce"):
+        endian = ">"
+        header = 32 if magic == b"\xfe\xed\xfa\xcf" else 28
+    else:
+        return None
+    ncmds = struct.unpack(endian + "I", data[16:20])[0]
+    pos = header
+    for _ in range(min(ncmds, 4096)):
+        if pos + 8 > len(data):
+            break
+        cmd, cmdsize = struct.unpack(endian + "II", data[pos:pos + 8])
+        if cmdsize < 8:
+            break
+        if cmd == LC_CODE_SIGNATURE:
+            return True
+        pos += cmdsize
+    return False
 
 
 def main():
@@ -79,7 +129,7 @@ def main():
     else:
         head = z.read(ui_hit)[:8]
         size = by_name[ui_hit].file_size
-        if not any(head.startswith(m) for m in MACHO_MAGIC):
+        if not any(head.startswith(m) for m in MACHO_MAGICS):
             errors.append(f"YZLUI 不是 Mach-O（前 8 字节 {head.hex()}）")
         elif size < 10000:
             errors.append(f"YZLUI 只有 {size} 字节，疑似空壳")
@@ -152,26 +202,40 @@ def main():
         else:
             note("OK  无 _CodeSignature / embedded.mobileprovision / CodeResources")
 
-        leaked = []
+        still_signed = []
+        string_hits = []
         scanned = 0
         for info in infos:
-            if not (info.filename.endswith((".dylib", ".framework/YZLUI"))
-                    or re.search(r"/[^/]+\.(app)/[^/]+$", info.filename)):
+            if info.is_dir() or info.file_size < 4096 or info.file_size > 60 * 1024 * 1024:
                 continue
-            if info.file_size > 40 * 1024 * 1024 or info.file_size < 10000:
-                continue
-            scanned += 1
             try:
+                with z.open(info) as handle:
+                    head = handle.read(8)
+                if not any(head.startswith(m) for m in MACHO_MAGICS):
+                    continue
                 blob = z.read(info.filename)
             except Exception:  # noqa: BLE001
                 continue
+            scanned += 1
+            if macho_has_code_signature(blob):
+                still_signed.append(info.filename)
             if any(key in blob for key in PRIVATE_KEYS):
-                leaked.append(info.filename)
-        note(f"私有 entitlement 扫描: {scanned} 个二进制")
-        if leaked:
-            errors.append(f"仍带 TrollStore 私有 entitlement 的二进制: {leaked[:5]}")
+                string_hits.append(info.filename)
+        note(f"已检查 {scanned} 个 Mach-O 的 LC_CODE_SIGNATURE")
+        if still_signed:
+            errors.append(
+                f"仍有 {len(still_signed)} 个 Mach-O 带代码签名（私有权限可能残留）: "
+                f"{still_signed[:5]}"
+            )
         else:
-            note("OK  未发现 TrollStore 私有 entitlement")
+            note("OK  所有 Mach-O 均无 LC_CODE_SIGNATURE（无有效 entitlement）")
+        if string_hits:
+            warnings.append(
+                f"{len(string_hits)} 个二进制的 __TEXT 含 entitlement 名字符串，"
+                f"属上游源码常量、不构成有效权限: {string_hits[:3]}"
+            )
+        else:
+            note("OK  未发现私有 entitlement 字符串")
 
     _finish(errors, warnings, lines, args.report)
     return 1 if errors else 0
