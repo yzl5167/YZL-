@@ -30,10 +30,26 @@ enum EngineJVMArguments {
 
     /// 从启动计划里过滤出可以安全转发的参数：只留 `-Xmx/-Xms/-XX:` 这类，
     /// 路径类（`-Djava.library.path`）与产品标识类一律丢弃。
+    /// `-cp` / `-classpath` 是两段式参数，值（jar 路径）也要一并丢掉。
     static func sanitized(from arguments: [String]) -> [String] {
-        let blockedPrefixes = ["-Djava.library.path", "-Djava.class.path", "-cp", "-classpath", "-jar"]
-        return arguments.filter { argument in
-            blockedPrefixes.contains { argument.hasPrefix($0) } == false
+        let blockedPrefixes = ["-Djava.library.path", "-Djava.class.path", "-jar"]
+        let blockedWithSeparateValue: Set<String> = ["-cp", "-classpath"]
+        var result: [String] = []
+        var skipNext = false
+        for argument in arguments {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if blockedWithSeparateValue.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if blockedPrefixes.contains(where: { argument.hasPrefix($0) }) {
+                continue
+            }
+            result.append(argument)
         }
+        return result
     }
 }

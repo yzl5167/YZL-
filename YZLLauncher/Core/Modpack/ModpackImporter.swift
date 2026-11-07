@@ -190,16 +190,18 @@ enum ModpackImporter {
             throw ModpackError.unsupportedLoader(rawLoader.contains("neo") ? "NeoForge" : "Forge")
         }
 
+        // 空壳拦截要在「没写 Minecraft 版本」之前：一个只有 readme 的 zip
+        // 应报「没有可安装内容」，而不是「没指定版本」。
+        let extractItems = buildExtractItems(stripped: stripped, format: format)
+        guard !extractItems.isEmpty || partial.onlineFiles != nil || partial.curseForgeFiles != nil else {
+            throw ModpackError.emptyArchive
+        }
+
         guard !partial.minecraftVersion.isEmpty else {
             throw ModpackError.missingMinecraftVersion
         }
         if partial.loader == nil, let rawLoader = partial.rawLoader?.lowercased() {
             partial.loader = loaderKind(from: rawLoader)
-        }
-
-        let extractItems = buildExtractItems(stripped: stripped, format: format)
-        guard !extractItems.isEmpty || partial.onlineFiles != nil || partial.curseForgeFiles != nil else {
-            throw ModpackError.emptyArchive
         }
 
         let onlineSource: ModpackOnlineSource

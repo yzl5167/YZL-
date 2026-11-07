@@ -160,17 +160,20 @@ final class YggdrasilAuthTests: XCTestCase {
 
     /// 构造 sessionserver 响应：properties[].textures 的 value 是 Base64 编码的 JSON。
     private func texturesPayload(skinModel: String?, cape: Bool) -> Data {
-        var textures = #"{"SKIN": {"url": "https://skin.example.com/texture.png""#
+        var skin = "{\"url\": \"https://skin.example.com/texture.png\""
         if let skinModel {
-            textures += #", "metadata": {"model": "\#(skinModel)"}"#
+            skin += ", \"metadata\": {\"model\": \"\(skinModel)\"}"
         }
-        textures += "}"
+        skin += "}"
+
+        var textures = "{\"SKIN\": \(skin)"
         if cape {
-            textures += #", "CAPE": {"url": "https://skin.example.com/cape.png"}"#
+            textures += ", \"CAPE\": {\"url\": \"https://skin.example.com/cape.png\"}"
         }
         textures += "}"
+
         let value = Data(textures.utf8).base64EncodedString()
-        return Data(#"{"properties": [{"name": "textures", "value": "\#(value)"}]}"#.utf8)
+        return Data("{\"properties\": [{\"name\": \"textures\", \"value\": \"\(value)\"}]}".utf8)
     }
 
     func testParseTexturesSlimModelAndCape() {
