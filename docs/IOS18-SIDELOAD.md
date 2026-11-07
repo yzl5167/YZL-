@@ -3,6 +3,12 @@
 > 适用：没有 TrollStore、也不打算换低版本系统的 iPhone（本项目测试机为 iOS 18.7.8）。
 > 对应产物：`YZL-engine-sideload-unsigned.ipa`（干净未签名，约 110 MB）。
 > 2026-11-07 起由 `.github/workflows/build-engine-ipa.yml` 与 `.tipa` 同时产出。
+>
+> **去哪拿包**：GitHub Actions → `Engine baseline (M2-b experiment)` 最新一次
+> 成功的 run → artifact `engine-build-main` → 解压取
+> `YZL-engine-sideload-unsigned.ipa`（同目录还有 `ENGINE-PAYLOAD-*.txt` 校验报告）。
+> Actions artifact 有保留期限；也可用 `relay-engine.yml` 中转出的临时直链。
+> `release-ipa.yml` 只挂外壳预览包，**不含引擎包**。
 
 ## 0. 先纠正一个常见误解：这是单包，不是两个 App
 
