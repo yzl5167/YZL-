@@ -193,19 +193,27 @@ jobs:
         working-directory: amethyst
         run: |
           set -o pipefail
+
+          # 上游 JavaApp/Makefile 写的是：
+          #   launcher.jar: $(CLASSES) check_empty_classes
+          # 两个依赖并列，-jN 下 check_empty_classes 会与 javac 同时启动，
+          # 把正在写入的 0 字节 .class 当成编译失败（不是偶发，是必然竞态）。
+          # 让检查显式依赖 $(CLASSES)，make 就必须等全部 javac 完成。
+          MF=JavaApp/Makefile
+          python3 "$GITHUB_WORKSPACE/engine/fix-check-empty-classes.py" "$MF"
+          grep -n 'check_empty_classes' "$MF" | head -5
+
           # Amethyst 的 Makefile 用 /usr/libexec/java_home -v 1.8 找 BOOTJDK，
           # setup-java 装的 JDK 不在 java_home 注册表里——显式传 BOOTJDK 覆盖。
           run_make() {
             make -j"$1" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
               BOOTJDK="$JAVA_HOME/bin" 2>&1 | tee engine-build.log
           }
-          # 上游 JavaApp/Makefile 的 check_empty_classes 与并行 javac 存在竞态：
-          # -jN 时它可能在 GLFW.class 还没写完（0 字节）时就去检查，误报
-          # "found empty class files"。此时删掉这些半成品并改用单线程重跑即可。
+          # 兜底：上游若再次改动导致竞态复现，清掉全部 0 字节 class 后单线程重跑。
           if ! run_make "$(sysctl -n hw.ncpu)"; then
             if grep -q "found empty class files" engine-build.log; then
-              echo "::warning::并行 javac 竞态触发 check_empty_classes 误报，清理空 class 后单线程重跑"
-              find . -type f -path '*/build/classes/*' -name '*.class' -size 0 -delete
+              echo "::warning::check_empty_classes 仍误报，清理全部空 class 后单线程重跑"
+              find . -type f -name '*.class' -size 0 -delete
               run_make 1
             else
               echo "::error::make payload 失败（非竞态错误），见 engine-build.log"
