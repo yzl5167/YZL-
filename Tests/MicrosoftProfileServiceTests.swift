@@ -36,16 +36,20 @@ final class MicrosoftProfileServiceTests: XCTestCase {
     // MARK: - profile 解析
 
     func testParseProfilePicksActiveSkinAndCapes() throws {
-        let data = try XCTUnwrap("{"
-            + "\"id\": \"abc\", \"name\": \"Steve\", "
-            + "\"skins\": ["
-            + "{\"id\": \"s1\", \"state\": \"ACTIVE\", \"url\": \"http://textures.minecraft.net/steve.png\", \"variant\": \"SLIM\"}, "
-            + "{\"id\": \"s2\", \"state\": \"\", \"url\": \"http://textures.minecraft.net/old.png\", \"variant\": \"CLASSIC\"}"
-            + "], "
-            + "\"capes\": ["
-            + "{\"id\": \"cape1\", \"alias\": \"Migrator\", \"state\": \"ACTIVE\", \"url\": \"http://capes/migrator.png\"}, "
-            + "{\"id\": \"cape2\", \"alias\": \"Pan\", \"state\": \"\", \"url\": \"http://capes/pan.png\"}"
-            + "]}".data(using: .utf8))
+        // 数组 joined：长 JSON 字符串链式拼接会让类型检查器超时。
+        let json = [
+            "{",
+            "\"id\": \"abc\", \"name\": \"Steve\", ",
+            "\"skins\": [",
+            "{\"id\": \"s1\", \"state\": \"ACTIVE\", \"url\": \"http://textures.minecraft.net/steve.png\", \"variant\": \"SLIM\"}, ",
+            "{\"id\": \"s2\", \"state\": \"\", \"url\": \"http://textures.minecraft.net/old.png\", \"variant\": \"CLASSIC\"}",
+            "], ",
+            "\"capes\": [",
+            "{\"id\": \"cape1\", \"alias\": \"Migrator\", \"state\": \"ACTIVE\", \"url\": \"http://capes/migrator.png\"}, ",
+            "{\"id\": \"cape2\", \"alias\": \"Pan\", \"state\": \"\", \"url\": \"http://capes/pan.png\"}",
+            "]}"
+        ].joined()
+        let data = try XCTUnwrap(json.data(using: .utf8))
 
         let profile = try XCTUnwrap(MicrosoftProfileService.parseProfile(data))
         XCTAssertEqual(profile.skinURL, "http://textures.minecraft.net/steve.png", "只取 state == ACTIVE 的皮肤")

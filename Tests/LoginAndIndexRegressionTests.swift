@@ -53,21 +53,26 @@ final class LoginAndIndexRegressionTests: XCTestCase {
         XCTAssertTrue(service.usesBrowserSignIn)
         XCTAssertEqual(service.rpsTicketPrefixes(), ["", "d"], "MBI_SSL 令牌是预成型 RPS ticket，应裸传优先")
 
-        let url = try XCTUnwrap(service.authorizationURL)
-        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        // 2026-11-07 起浏览器流程对齐 Windows 端实测可用版本：PKCE + select_account + XboxLive 作用域。
+        let login = try XCTUnwrap(service.makeBrowserLogin())
+        let components = try XCTUnwrap(URLComponents(url: login.url, resolvingAgainstBaseURL: false))
         let items = components.queryItems ?? []
         XCTAssertEqual(components.host, "login.live.com")
         XCTAssertEqual(components.path, "/oauth20_authorize.srf")
         XCTAssertEqual(items.first { $0.name == "client_id" }?.value, MicrosoftAuth.defaultClientId)
         XCTAssertEqual(items.first { $0.name == "response_type" }?.value, "code")
         XCTAssertEqual(items.first { $0.name == "redirect_uri" }?.value, MicrosoftAuthService.redirectURI)
-        XCTAssertEqual(items.first { $0.name == "scope" }?.value, "service::user.auth.xboxlive.com::MBI_SSL")
+        XCTAssertEqual(items.first { $0.name == "scope" }?.value, MicrosoftAuthService.browserScope)
+        XCTAssertEqual(items.first { $0.name == "prompt" }?.value, "select_account")
+        XCTAssertEqual(items.first { $0.name == "code_challenge_method" }?.value, "S256")
+        XCTAssertNotNil(items.first { $0.name == "code_challenge" }?.value)
+        XCTAssertFalse(login.codeVerifier.isEmpty)
     }
 
     func testCustomAzureClientKeepsDeviceCodeFlow() {
         let service = MicrosoftAuthService(clientId: "11111111-2222-3333-4444-555555555555")
         XCTAssertFalse(service.usesBrowserSignIn)
-        XCTAssertNil(service.authorizationURL)
+        XCTAssertNil(service.makeBrowserLogin())
         XCTAssertEqual(service.rpsTicketPrefixes(), ["t", "d"])
     }
 
