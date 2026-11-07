@@ -93,18 +93,23 @@ enum PclAvatarRenderer {
     }
 
     private static func toRGBA(_ image: CGImage) -> CGImage {
-        guard let ctx = makeContext(size: max(1, image.width)) else { return image }
+        // 上下文必须按图片实际尺寸建（64×32 旧皮肤是非正方形的，正方形上下文会破坏内容）。
+        guard let ctx = makeContext(width: max(1, image.width), height: max(1, image.height)) else { return image }
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return ctx.makeImage() ?? image
     }
 
     private static func makeContext(size: Int) -> CGContext? {
+        makeContext(width: size, height: size)
+    }
+
+    private static func makeContext(width: Int, height: Int) -> CGContext? {
         CGContext(
             data: nil,
-            width: size,
-            height: size,
+            width: width,
+            height: height,
             bitsPerComponent: 8,
-            bytesPerRow: size * 4,
+            bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
