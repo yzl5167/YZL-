@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 
 /// 3D 皮肤预览视图：走路摆臂动画 + 拖动旋转（对照 Windows 端 SkinPreview3D /
 /// Android 端 HomeAvatar 的 3D 模型）。皮肤解析与 AvatarView 同一条链：
 /// 本地 `yzl-local-skin://` → 账号 skinURL → 程序化默认皮肤。
 ///
-/// 走路动画用 TimelineView(.animation) 驱动（iOS 15 可用），渲染在 Canvas 里
-/// 调 Skin3DModel.draw；模型只在贴图 / 模型类型变化时重建一次。
+/// 渲染用 UIKit 的 `draw(_:)` + CADisplayLink（iOS 15 全兼容）：
+/// SwiftUI Canvas 的 `GraphicsContext.cgContext` 要 iOS 16，部署目标 15 用不了。
 struct Skin3DView: View {
     let account: MicrosoftAccount?
     /// "steve" / "alex" / "custom"：alex 用纤细手臂，其余经典。
@@ -22,7 +23,6 @@ struct Skin3DView: View {
     @State private var model: Skin3DModel?
     @State private var dragStartYaw: CGFloat = 0
     @State private var dragStartPitch: CGFloat = 0
-    @State private var walkStart = Date()
 
     /// 默认视角（主页同款略侧身）。
     static let defaultYaw: CGFloat = -18
@@ -40,19 +40,12 @@ struct Skin3DView: View {
     }
 
     var body: some View {
-        // 闭包类型显式标注：Canvas 渲染闭包里 mixed self 捕获 + 泛型推断在
-        // 云端编译器上会报「generic parameter 'Content' could not be inferred」。
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { (timeline: TimelineViewDefaultContext) in
-            Canvas { (context: inout GraphicsContext, size: CGSize) in
-                guard let model = self.model else { return }
-                // 与 Android 端 HomeAvatar 一致：walkPhase 每秒 +2.4 rad。
-                let phase = self.animated
-                    ? timeline.date.timeIntervalSince(self.walkStart) * 2.4
-                    : 0
-                model.draw(into: context.cgContext, size: size,
-                           yawDeg: self.yawDeg, pitchDeg: self.pitchDeg, walkPhase: CGFloat(phase))
-            }
-        }
+        Skin3DCanvasRepresentable(
+            model: model,
+            animated: animated,
+            yawDeg: $yawDeg,
+            pitchDeg: $pitchDeg
+        )
         .frame(width: canvasSize, height: canvasSize)
         .contentShape(Rectangle())
         .gesture(
@@ -106,5 +99,93 @@ struct Skin3DView: View {
         if value > 180 { value -= 360 }
         if value <= -180 { value += 360 }
         return value
+    }
+}
+
+// MARK: - UIKit 宿主
+
+private struct Skin3DCanvasRepresentable: UIViewRepresentable {
+    let model: Skin3DModel?
+    let animated: Bool
+    @Binding var yawDeg: CGFloat
+    @Binding var pitchDeg: CGFloat
+
+    func makeUIView(context: Context) -> Skin3DCanvas {
+        let view = Skin3DCanvas(frame: .zero)
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        return view
+    }
+
+    func updateUIView(_ uiView: Skin3DCanvas, context: Context) {
+        uiView.model = model
+        uiView.animated = animated
+        uiView.yawDeg = yawDeg
+        uiView.pitchDeg = pitchDeg
+    }
+}
+
+/// 真正画 3D 模型的 UIView：CADisplayLink 30fps 驱动走路动画，
+/// 每帧调 Skin3DModel.draw 重画（与 Android 端 HomeAvatar 同策略）。
+final class Skin3DCanvas: UIView {
+    var model: Skin3DModel? { didSet { setNeedsDisplay() } }
+    var yawDeg: CGFloat = Skin3DView.defaultYaw { didSet { setNeedsDisplay() } }
+    var pitchDeg: CGFloat = Skin3DView.defaultPitch { didSet { setNeedsDisplay() } }
+    var animated: Bool = true { didSet { syncDisplayLink() } }
+
+    /// 走路相位基准：从视图创建时刻起算（与 Android 端每秒 +2.4 rad 一致）。
+    private let walkStart = Date()
+    private var displayLink: CADisplayLink?
+    private let displayProxy = DisplayProxy()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        syncDisplayLink()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        syncDisplayLink()
+    }
+
+    deinit {
+        displayLink?.invalidate()
+    }
+
+    /// 离开窗口（切页 / 进游戏）自动停帧，回来自动恢复。
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        syncDisplayLink()
+    }
+
+    private func syncDisplayLink() {
+        let shouldRun = animated && window != nil
+        if shouldRun, displayLink == nil {
+            displayProxy.view = self
+            let link = CADisplayLink(target: displayProxy, selector: #selector(DisplayProxy.tick(_:)))
+            link.preferredFramesPerSecond = 30
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        } else if !shouldRun, let link = displayLink {
+            link.invalidate()
+            displayLink = nil
+        }
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext(), let model else { return }
+        let phase = animated ? Date().timeIntervalSince(walkStart) * 2.4 : 0
+        model.draw(into: context, size: bounds.size,
+                   yawDeg: yawDeg, pitchDeg: pitchDeg, walkPhase: CGFloat(phase))
+    }
+
+    /// CADisplayLink 会强持有 target，直接传 self 会造成保留环；经弱代理转发。
+    private final class DisplayProxy: NSObject {
+        weak var view: Skin3DCanvas?
+
+        @objc func tick(_ link: CADisplayLink) {
+            view?.setNeedsDisplay()
+        }
     }
 }
