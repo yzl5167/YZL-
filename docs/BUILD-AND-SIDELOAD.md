@@ -1,6 +1,6 @@
 # 构建与侧载（M0 参考流程）
 
-> 本机是 Windows，没有 Xcode，以下内容**尚未在本机实测**。第一次真正构建时请按实际报错修正，并把结果回填到本文档。
+> 本机是 Windows，没有 Xcode；下文的操作已在 **GitHub Actions 的 macOS runner** 上实跑验证（2026-11-05 起），本机只做代码与静态自检。真机安装与启动仍未经实测，见第 7 节与 `IOS18-SIDELOAD.md` §8 的联调清单。
 
 ## 0. 先选安装路线
 
@@ -192,7 +192,11 @@ Amethyst 官方 README 的 JIT 对照表显示：TrollStore 不需要外部设�
 
 ## 7. 当前未验证项
 
-**2026-11-05 09:20 首次云构建结论**：`xcodegen generate` 零错误生成工程；`xcodebuild` 在 `AvatarView.swift` 报 3 个编译错误（exit 65），其余文件编译通过；`DownloadQueue.swift` 另有 1 条 Swift 6 并发警告。错误与警告当天已修复，但**修复后的代码尚未复跑编译**，仓库里仍没有 IPA。
+**首次云构建（2026-11-05 09:20）**：`xcodegen generate` 成功；`xcodebuild` 在 `AvatarView.swift` 报 3 个编译错误（exit 65），`DownloadQueue.swift` 有 1 条 Swift 6 并发警告。这些当天已修复。
+
+**后续状态（2026-11-07）**：修复早已复跑通过，云构建现为常态流水线 —— `build-ipa.yml` 产出纯外壳未签名 IPA 并通过 **139 个单测 / 0 失败**；`build-engine-ipa.yml` 产出 `YZL-engine.tipa` 与 `YZL-engine-sideload-unsigned.ipa`，并由 `scripts/verify_engine_ipa.py` 做完整性硬校验。本节早期「仓库里仍没有 IPA」的结论已作废。
+
+**仍未验证的只有真机**：安装 → YZL 界面 → 装版本 → 开 JIT → 启动进游戏。按 `IOS18-SIDELOAD.md` §8 逐项回填。
 
 建议的验收顺序：
 

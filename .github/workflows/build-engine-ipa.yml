@@ -195,9 +195,24 @@ jobs:
           set -o pipefail
           # Amethyst 的 Makefile 用 /usr/libexec/java_home -v 1.8 找 BOOTJDK，
           # setup-java 装的 JDK 不在 java_home 注册表里——显式传 BOOTJDK 覆盖。
-          make -j"$(sysctl -n hw.ncpu)" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
-            BOOTJDK="$JAVA_HOME/bin" \
-            2>&1 | tee engine-build.log
+          run_make() {
+            make -j"$1" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
+              BOOTJDK="$JAVA_HOME/bin" 2>&1 | tee engine-build.log
+          }
+          # 上游 JavaApp/Makefile 的 check_empty_classes 与并行 javac 存在竞态：
+          # -jN 时它可能在 GLFW.class 还没写完（0 字节）时就去检查，误报
+          # "found empty class files"。此时删掉这些半成品并改用单线程重跑即可。
+          if ! run_make "$(sysctl -n hw.ncpu)"; then
+            if grep -q "found empty class files" engine-build.log; then
+              echo "::warning::并行 javac 竞态触发 check_empty_classes 误报，清理空 class 后单线程重跑"
+              find . -type f -path '*/build/classes/*' -name '*.class' -size 0 -delete
+              run_make 1
+            else
+              echo "::error::make payload 失败（非竞态错误），见 engine-build.log"
+              tail -n 60 engine-build.log
+              exit 1
+            fi
+          fi
 
       - name: Rebrand payload (YZL name + icon + bundle id)
         run: |

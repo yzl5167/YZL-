@@ -159,4 +159,5 @@ itms-services://?action=download-manifest&url=https://你的域名/yzl/manifest.
 - 四个 `*.plist` 通过 XML 解析检查；4 个 `*.sh` 通过 `bash -n`；5 个 `*.ps1` 通过 PowerShell 5.1 语法解析并确认 UTF-8 BOM；`scripts/preflight.py` 全绿。
 - **没有在 macOS 上实跑过**：`ldid`、`codesign`、`PlistBuddy` 的行为、以及 Xcode 产物结构都还没验证。
 - **Windows 自签脚本也没实跑过**：`scripts/sign-ipa.ps1` 只做了语法与参数校验，需要真实 `.p12` + `.mobileprovision` + zsign 才能端到端验证；Sideloadly Export 流程同理，需要一次真机操作。
-- **没有 IPA**：缺 macOS 编译环境（本机只有 Windows），且本机没有 GitHub 凭据，云构建尚未复跑。
+- **IPA / TIPA 已由云构建常态产出**：本机没有 Xcode，但 GitHub Actions 的 macOS runner 已跑通 `xcodegen` + `xcodebuild` + 139 个单测，`build-ipa.yml` 出纯外壳未签名 IPA，`build-engine-ipa.yml` 出 `YZL-engine.tipa` 与 `YZL-engine-sideload-unsigned.ipa`（见 `IOS18-SIDELOAD.md`）。
+- **仍未在本机真跑过的**：`ldid` / `codesign` / `PlistBuddy` 的手工签名路径、Windows `sign-ipa.ps1` 的端到端自签、以及任何一台 iPhone 上的安装与启动。这些必须用真机验证，不能靠 CI 结论代替。

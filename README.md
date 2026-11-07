@@ -5,11 +5,17 @@
 
 仿照 PojavLauncher / Amethyst 思路的 Minecraft: Java Edition iOS 启动器（侧载版）。沿用 YZL 桌面端的浅色蓝主题与卡片样式。
 
-> 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。主线交付物是 TrollStore `.tipa`。
+> 与 FCL 启动器的对应关系、平台差异、以及「免费 Apple ID 能不能搞」见 [`docs/FCL-PARITY.md`](docs/FCL-PARITY.md)。**一个二进制覆盖全部 iOS 15+，凡是该系统版本支持免电脑就自动走免电脑路线**，完整分流矩阵见 [`docs/DEPLOYMENT-MATRIX.md`](docs/DEPLOYMENT-MATRIX.md)。
+>
+> **两种安装形态，按系统选一个**：iOS 15–16.6.1 / 17.0 用 `YZL-engine.tipa`（TrollStore 永久签名）；**iOS 17.4+ / 18.x 不走巨魔用 `YZL-engine-sideload-unsigned.ipa`**（干净未签名，SideStore / 轻松签 重签），完整步骤见 [`docs/IOS18-SIDELOAD.md`](docs/IOS18-SIDELOAD.md)。
+>
+> ⚠️ **架构是单包 fork-overlay**：YZL 界面以 `YZLUI.framework` 注入 Amethyst 主 App，装上面任意一个引擎包即可，启动后就是 YZL 界面。`YZLLauncher-unsigned.ipa`（1.1 MB 纯外壳）只是 UI 预览 / 单测用，里面没有 `launchJVM` 符号，**单独装它进不了游戏，也不要把两个包都装上**。
 
-当前处于 **M0/M1 完成 + M2 引擎件就位、待真机联调**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、安装记录持久化、启动参数组装都已实现并通过云构建与单测。引擎包已经含 JRE 8/17/21/25、图形 dylib、Java 桥 jar 与 `YZLGameEntry`；**YZL UI 注入件（`YZLUI.framework` 二进制）此前缺失，已修好并在 2026-11-06 的 CI 中硬校验通过，接下来需要真机装包验证进游戏**。
+当前处于 **M0/M1 完成 + M2 引擎件就位、待真机联调**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、安装记录持久化、启动参数组装都已实现并通过云构建与单测。引擎包含图形 dylib、Java 桥 jar 与 `YZLGameEntry`；**JRE 8 / 17 完整可用，JRE 21 / 25 因上游 CDN 失效仍是空壳（1.21+ 暂不能玩，见 `IOS18-SIDELOAD.md` §5）**；YZL UI 注入件（`YZLUI.framework` 二进制）此前缺失，已修好并在 CI 中硬校验通过。
 
-2026-11-06 云构建：外壳 `7535b92` 编译成功，单测 **139 个 / 1 跳过 / 0 失败**；引擎流水线 `42220940394` 成功，最终 `.tipa` 已带 `Frameworks/YZLUI.framework/YZLUI`。
+2026-11-07 新增：引擎 CI 同时产出 `.tipa` 与**干净未签名** `YZL-engine-sideload-unsigned.ipa`（剥离 ldid 伪签与 TrollStore 私有 entitlement），并用 `scripts/verify_engine_ipa.py` 对两个包做产物完整性硬校验（YZLUI 真 Mach-O、JRE 8/17 真实可用、关键 jar/dylib 齐备、侧载包无签名残留）。
+
+**最大缺口仍是真机联调**：安装 → YZL 界面 → 装版本 → 启动进游戏，这条链路目前一次都没在 iPhone 上跑过。联调清单见 `IOS18-SIDELOAD.md` §8。
 
 ## 为什么只能侧载
 
@@ -55,21 +61,21 @@
 | 静态自检 `scripts/preflight.py`（括号 / JSON / plist / 禁用 API / shell / ps1 BOM） | 已实现并接入全部 CI 任务 |
 | `scripts/fetch-ipa.ps1`（Windows 一键触发构建并取回 IPA） | 已实现，PowerShell 5.1 语法校验通过 |
 | **云构建直出 TrollStore `.tipa`（主线）** | 已接入 `build-ipa.yml` / `release-ipa.yml`（ldid 伪签 + artifact + Release 附件），未实跑 |
-| 现代版本参数解析（arguments / minecraftArguments + 占位符替换 + 平台/feature 规则过滤） | 已实现，含单测（ArgumentResolverTests），未编译 |
+| 现代版本参数解析（arguments / minecraftArguments + 占位符替换 + 平台/feature 规则过滤） | 已实现，含单测（ArgumentResolverTests），已编译（云构建通过） |
 | 版本继承合并 VersionMerger（inheritsFrom 拍平，Forge/Fabric 启动前置） | 已实现，含单测（VersionMergerTests）；安装期拍平存盘已接入（`VersionInheritanceResolver` 取回父版本链并逐层落盘，启动不再依赖网络） |
-| Fabric 加载器安装（官方 Meta：加载器列表 → profile → 继承链解析 → Maven 坐标库下载 → 拍平安装） | 已实现，含单测（LoaderInstallTests）；版本页显示已安装加载器版本（fabric-loader-* 合并进清单 + Fabric 徽章）；未编译 |
-| Quilt 加载器安装（meta.quiltmc.org v3，与 Fabric 同链路） | 已实现，含单测（MirrorPolicyTests）；Quilt 条目无 stable 字段，按版本号 beta 兜底；未编译 |
-| 下载源切换（Mojang 官方 / BMCLAPI 镜像） | 已实现，含单测（MirrorPolicyTests）；映射表与 Android 端 Mirrors.kt 一致，端点已实测（清单 278,772 字节、资源对象、fabric-meta 均 200）；清单/详情/Meta/库/资源对象全链路生效；未编译 |
-| 离线皮肤本地导入（相册选图 → 尺寸校验 → Documents/YZLSkins 存 PNG） | 已实现，含单测（MirrorPolicyTests）；`yzl-local-skin://` 引用走本地文件，头像与皮肤页自动生效；微软账号补官网皮肤设置入口；未编译 |
-| 通用自适应（堆上限按可用内存收敛、不按机型出包） | 已实现并补单测，未编译 |
-| 全系统自动分流（6 档，能用免电脑就用免电脑） | 已实现：部署档位判定、JIT 按钮分流、诊断页三行提示、单测；未编译 |
-| **M2-b fork-overlay 架构定案与桥接层** | 已实现：架构决策（`docs/M2B-ENGINE.md`，证据链：原生桥焊在主二进制 / Java 侧自持启动链 / 无官方预编译）；`EnginePayloadLocator` 逐件诊断（含单测）、`EngineLaunchContract` 启动契约（含单测）、`YZLEngineHost` 运行时桥（dlsym + 契约 + SurfaceVC 运行时呈现）、`LauncherEngineFactory` fork↔外壳自动切换；未编译 |
+| Fabric 加载器安装（官方 Meta：加载器列表 → profile → 继承链解析 → Maven 坐标库下载 → 拍平安装） | 已实现，含单测（LoaderInstallTests）；版本页显示已安装加载器版本（fabric-loader-* 合并进清单 + Fabric 徽章）；已编译（云构建通过） |
+| Quilt 加载器安装（meta.quiltmc.org v3，与 Fabric 同链路） | 已实现，含单测（MirrorPolicyTests）；Quilt 条目无 stable 字段，按版本号 beta 兜底；已编译（云构建通过） |
+| 下载源切换（Mojang 官方 / BMCLAPI 镜像） | 已实现，含单测（MirrorPolicyTests）；映射表与 Android 端 Mirrors.kt 一致，端点已实测（清单 278,772 字节、资源对象、fabric-meta 均 200）；清单/详情/Meta/库/资源对象全链路生效；已编译（云构建通过） |
+| 离线皮肤本地导入（相册选图 → 尺寸校验 → Documents/YZLSkins 存 PNG） | 已实现，含单测（MirrorPolicyTests）；`yzl-local-skin://` 引用走本地文件，头像与皮肤页自动生效；微软账号补官网皮肤设置入口；已编译（云构建通过） |
+| 通用自适应（堆上限按可用内存收敛、不按机型出包） | 已实现并补单测，已编译（云构建通过） |
+| 全系统自动分流（6 档，能用免电脑就用免电脑） | 已实现：部署档位判定、JIT 按钮分流、诊断页三行提示、单测；已编译（云构建通过） |
+| **M2-b fork-overlay 架构定案与桥接层** | 已实现：架构决策（`docs/M2B-ENGINE.md`，证据链：原生桥焊在主二进制 / Java 侧自持启动链 / 无官方预编译）；`EnginePayloadLocator` 逐件诊断（含单测）、`EngineLaunchContract` 启动契约（含单测）、`YZLEngineHost` 运行时桥（dlsym + 契约 + SurfaceVC 运行时呈现）、`LauncherEngineFactory` fork↔外壳自动切换；已编译（云构建通过） |
 | **M2-b fork 补丁与引擎 CI** | 已实现：三处补丁（PojavLauncher YZL 分支 / 二进制名解耦 / UI 注入点）+ 幂等应用脚本 + `engine/fork-patches/yzl/YZLGameEntry.java`；实验流水线 `build-engine-ipa.yml`（workflow_dispatch，托管 runner 实测审计 §10 待验证项）；未实跑 |
 | Windows 自签（备用，当前不采用） | 脚本与 entitlement 模板已实现，未用真实证书实跑 |
 
-> 表里的「未编译」指**修复后的整包代码还没在 macOS 上重新编过一次**；09:20 那次云构建已成功生成 Xcode 工程，并编过除 `AvatarView.swift` 以外的全部文件。
+> 表格状态已于 2026-11-07 统一刷新：此前标注为待编译的条目，现在都已由 GitHub Actions 的 macOS runner 编译并通过单测（`** TEST SUCCEEDED **`，139 个 / 1 跳过 / 0 失败）。
 >
-> 本工程在 Windows 上创建，本机没有 Xcode 和 Swift 编译器。现在可以先跑 `python3 scripts/preflight.py` 做静态自检（CI 三个任务也都会跑），但**真正的编译验证仍只能在 Mac 或云端 macOS 上完成**：`xcodegen generate` + `xcodebuild` 通过，模拟器能打开主页、版本、账号、设置四个页面并拉到版本列表，且 `LaunchCommandTests` / `RuntimeLocatorTests` / `EngineIntegrationTests` 全绿。
+> 本工程在 Windows 上创建，本机没有 Xcode；编译与测试一律走云端 macOS runner。`python3 scripts/preflight.py` 是提交前的静态自检（括号 / JSON / plist / 禁用 API / shell / ps1 BOM），三个 CI 任务都会先跑它。
 
 iOS 外壳按安卓已安装版同步：左侧 84pt 图标栏、居中 FCL 式主页、卡片式账号管理页和设备代码登录弹窗。安卓工程本身未做修改；iOS 的默认微软公共客户端 ID 与安卓一致（`00000000402b5328`），自定义 Azure 客户端仍可在设置里覆盖。
 
@@ -79,7 +85,7 @@ iOS 外壳按安卓已安装版同步：左侧 84pt 图标栏、居中 FCL 式�
 - **继续安装**：已完成且 SHA-1 一致的文件直接跳过，未完成的分片从断点续传，不会把 732 MB 从头再下一遍。
 - **启动游戏**：先做启动自检——账户与令牌、安装记录、版本 JSON、客户端 jar、依赖库、资源索引、JRE、JIT、Amethyst 内核、内存——再生成 classpath、主类、JVM 参数和游戏参数（`LaunchPlan`）。全部通过后才交给引擎。
 - 自检面板现在会额外显示一条「启动命令」检查项：`LaunchCommand` 已把 JVM 参数、`-cp`、主类与游戏参数按顺序组装好，令牌只留在内存且展示时脱敏。
-- 目前 JRE 二进制与 Amethyst 内核仍属于 M2，所以自检会明确停在「Java 运行时 / 启动内核」两项；按钮不再弹一句“还不能启动”，而是打开可逐项核对的启动面板。接入引擎后只需提供一个 `EngineBridge` 实现并注入 `AmethystEngine`，外壳与启动面板都不用改。
+- 引擎包（fork-overlay）已把 JRE 8/17 与 `launchJVM` 打进同一个 App，`LauncherEngineFactory` 在 fork 进程内 `dlsym` 命中后自动切到 `YZLEngineHost` 真启动；纯外壳构建仍走 `AmethystEngine()` 接缝实现并如实报「内核未接入」。启动面板会逐项显示 JRE / JIT / 内核状态，不再含糊地弹一句“还不能启动”。
 
 ### 本机已做过的检查（2026-11-04）
 
@@ -327,9 +333,11 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 - **M0（已完成）** 工程骨架、界面、版本清单、构建与侧载文档
 - **M1（已完成）** 微软登录、版本安装、分片断点续传下载器、安装记录、启动自检与 LaunchPlan；云构建通过，单测 139 个全绿
 - **M2（接缝完成）** LaunchCommand / RuntimeLocator / JITProbe / AmethystEngine + EngineBridge 已实现并带单测
-- **M2-b（引擎包完成，待真机联调）** fork-overlay 路线：Amethyst fork + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 兼容补丁。成品 `YZL-engine.tipa` 含引擎、20 个图形 dylib、6 个 Java 桥 jar、**JRE 8/17/21/25 全套**、`launcher.jar` 内的 `YZLGameEntry`，以及可执行的 `YZLUI.framework`。
-  - **修正（2026-11-06）**：此前一版 `YZLUI.framework` 只有 `Info.plist` / `Assets.car`，缺 Mach-O 二进制（`YZLUI` 源码引用 `WKWebView` 但 framework target 没链接 WebKit，且 CI 对该步 `continue-on-error`）。现已补 `WebKit.framework` 依赖、去掉容错，并在注入后与最终 `.tipa` 两处硬校验 `Frameworks/YZLUI.framework/YZLUI`；run `42220940394` 通过。
-  - **剩余**：TrollStore 真机安装 → 确认进入 YZL 界面 → 安装版本 → 启动进游戏。JRE 二进制来自 Pojav iOS v2.2 提取（原 CDN 已失效），后续建议换 Amethyst 社区新版。
+- **M2-b（引擎包完成，待真机联调）** fork-overlay 路线：Amethyst fork + 三处补丁（Java YZL 分支 / 二进制名解耦 / SceneDelegate 根视图接管）+ mach.h 兼容补丁。成品含引擎、图形 dylib、Java 桥 jar、**完整可用的 JRE 8 / 17**（各约 102 MB）、`launcher.jar` 内的 `YZLGameEntry`，以及可执行的 `YZLUI.framework`。
+  - **修正（2026-11-06）**：此前一版 `YZLUI.framework` 只有 `Info.plist` / `Assets.car`，缺 Mach-O 二进制（`YZLUI` 源码引用 `WKWebView` 但 framework target 没链接 WebKit，且 CI 对该步 `continue-on-error`）。现已补 `WebKit.framework` 依赖、去掉容错，并硬校验 `Frameworks/YZLUI.framework/YZLUI`；run `42220940394` 通过。
+  - **修正（2026-11-07）**：旧产物 `YZL-engine-unsigned.ipa` 只是把 `.tipa` 复制改名，仍带 ldid 伪签与 TrollStore 私有 entitlement，iOS 18 用 SideStore / 轻松签 重签必然失败。现由 `scripts/make-sideload-ipa.sh` 剥离全部代码签名与私有权限，另产 `YZL-engine-sideload-unsigned.ipa`；`scripts/verify_engine_ipa.py` 对两个包做完整性硬校验并输出报告。
+  - **已知限制**：JRE 21 / 25 因上游 CDN `assets.angelauramc.dev` 失效仍是空壳，**1.21+ 暂不能玩**；JRE 8/17 来自停更的 PojavLauncher iOS v2.2，建议后续换 Amethyst 社区维护版。
+  - **剩余**：真机安装 → 确认进入 YZL 界面 → 安装版本 → 启动进游戏（清单见 `IOS18-SIDELOAD.md` §8）；微软网页授权真机回环；M3 与 GPLv3 衍生开源义务。
 - **M3（未开始）** 模组 / 整合包、三源聚合、联机能力
 
 ## 合规
@@ -342,7 +350,9 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 
 1. **构建环境**：目前只有 Windows。首轮编译走 GitHub Actions 云构建，或临时借用 Mac；本机继续做代码和静态检查。
 2. **引擎路线**：保留自制 SwiftUI 外壳，复用 Pojav 系引擎。PojavLauncher_iOS 已归档，实际底座改用活跃维护的 **Amethyst-iOS**（GPLv3）。与引擎链接的 iOS 端部分按 GPLv3 开源，不再按闭源分发设计。
-3. **测试机（2026-11-05 已决策）**：为做到**全程免电脑**，选一台 **A12+ / iOS 15.0 – 15.4.1** 的设备，用 **TrollHelperOTA** 在手机 Safari 里装 TrollStore（不用电脑、不用 Apple ID）；到手先关自动更新、别升级。选型与操作步骤见 `docs/FCL-PARITY.md` §5.1。原 iOS 18.7.8 保留作免费 Apple ID 自签的备用机器。
+3. **测试机与两条并行路线（2026-11-07 更新）**：
+   - **TrollStore 主线（全程零电脑）**：A12+ / iOS 15.0 – 15.4.1 的设备，手机 Safari 用 TrollHelperOTA 装 TrollStore，装 `YZL-engine.tipa`。选型见 `docs/FCL-PARITY.md` §5.1。
+   - **iOS 17.4+ / 18.x 侧载线（本机既有测试机 18.7.8，用户指定优先）**：不折腾巨魔，用 `YZL-engine-sideload-unsigned.ipa` + SideStore 重签 + StikDebug 开 JIT。**不要再把它当「备用机器」**——2026-11-07 起该路线有独立构建产物与文档 `docs/IOS18-SIDELOAD.md`；首次配对仍需电脑，之后手机可自续签。
 4. **界面方向**：2026-11-04 晚改为固定横屏，主页/账户/关于/版本详情统一双列；竖屏布局不再维护。
 
 引擎接缝审计见 `docs/POJAV-ENGINE-AUDIT.md`（已完成初步审计）。
