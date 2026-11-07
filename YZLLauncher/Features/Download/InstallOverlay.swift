@@ -89,7 +89,7 @@ struct InstallOverlay: View {
             .frame(width: 32, height: 32)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(success ? YZLTheme.successSoft : YZLTheme.dangerSoft)
+                    .fill(success ? YZLTheme.successSoft : YZLTheme.danger.opacity(0.10))
             )
     }
 
@@ -172,7 +172,7 @@ struct InstallOverlay: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(danger ? YZLTheme.dangerSoft : YZLTheme.field)
+                        .fill(danger ? YZLTheme.danger.opacity(0.10) : YZLTheme.field)
                 )
             Button {
                 queue.dismissTerminalState()
