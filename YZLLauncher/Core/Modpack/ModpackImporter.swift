@@ -57,7 +57,7 @@ struct ModpackOnlineFile {
 }
 
 /// CurseForge 在线文件引用（URL 要按 projectID/fileID 向 MCIM 查询）。
-struct CurseForgeFileRef: Equatable {
+struct CurseForgeFileRef: Equatable, Hashable {
     let projectID: Int
     let fileID: Int
 }
@@ -421,7 +421,9 @@ enum ModpackImporter {
         var next = partial
         let text = String(decoding: data, as: UTF8.self)
         var values: [String: String] = [:]
-        for line in text.lines {
+        // String.lines 在部分 Swift 版本里不可用，统一用 split（保守写法，行为一致）。
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty, !trimmed.hasPrefix("[") else { continue }
             // 取先出现者：Windows 端语义（冒号与等号都支持）。
@@ -476,8 +478,8 @@ enum ModpackImporter {
     private static func parseInstanceCfg(_ data: Data, partial: PartialPlan) -> PartialPlan {
         var next = partial
         let text = String(decoding: data, as: UTF8.self)
-        for line in text.lines where line.hasPrefix("name=") {
-            next.packName = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+        for rawLine in text.split(separator: "\n") where rawLine.hasPrefix("name=") {
+            next.packName = String(rawLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             break
         }
         return next

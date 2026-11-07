@@ -40,15 +40,17 @@ struct Skin3DView: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { timeline in
-            Canvas { context, size in
-                guard let model else { return }
+        // 闭包类型显式标注：Canvas 渲染闭包里 mixed self 捕获 + 泛型推断在
+        // 云端编译器上会报「generic parameter 'Content' could not be inferred」。
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { (timeline: TimelineViewDefaultContext) in
+            Canvas { (context: inout GraphicsContext, size: CGSize) in
+                guard let model = self.model else { return }
                 // 与 Android 端 HomeAvatar 一致：walkPhase 每秒 +2.4 rad。
-                let phase = animated
-                    ? timeline.date.timeIntervalSince(walkStart) * 2.4
+                let phase = self.animated
+                    ? timeline.date.timeIntervalSince(self.walkStart) * 2.4
                     : 0
                 model.draw(into: context.cgContext, size: size,
-                           yawDeg: yawDeg, pitchDeg: pitchDeg, walkPhase: CGFloat(phase))
+                           yawDeg: self.yawDeg, pitchDeg: self.pitchDeg, walkPhase: CGFloat(phase))
             }
         }
         .frame(width: canvasSize, height: canvasSize)

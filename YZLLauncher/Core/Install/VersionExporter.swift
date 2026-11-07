@@ -432,7 +432,9 @@ enum VersionExporter {
         if let data = try? Data(contentsOf: layout.versionJSON) {
             detail = try? JSONDecoder().decode(VersionDetail.self, from: data)
         }
-        let loader = detail.map { detectLoader(detail: $0) } ?? ("原版", nil, versionID)
+        // fallback 元组必须带标签，否则 loader.name 等成员访问编译不过。
+        let loader = detail.map { detectLoader(detail: $0) }
+            ?? (name: "原版", version: nil, baseVersion: versionID)
 
         var all: [ZIPWriter.Entry] = [
             ZIPWriter.Entry(

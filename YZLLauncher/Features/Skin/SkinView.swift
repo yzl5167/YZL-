@@ -45,7 +45,7 @@ struct SkinView: View {
                             if appState.account != nil,
                                appState.activeYggdrasilAccount == nil,
                                appState.activeOfflineAccount == nil {
-                                microsoftSkinCard(account)
+                                microsoftSkinCard
                             }
                             if appState.activeOfflineAccount != nil {
                                 offlineSkinCard(account)

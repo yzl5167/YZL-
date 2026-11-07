@@ -67,7 +67,8 @@ enum ZIPReader {
         let file = try FileHandle(forReadingFrom: zipURL)
         defer { try? file.close() }
 
-        let fileSize = try file.seekToEnd()
+        // seekToEnd 返回 UInt64，统一收成 Int64（后面偏移计算全用 Int64）。
+        let fileSize = Int64(try file.seekToEnd())
         guard fileSize >= 22 else {
             throw ZIPError.notAZip
         }
