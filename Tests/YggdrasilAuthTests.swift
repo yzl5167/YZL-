@@ -158,7 +158,8 @@ final class YggdrasilAuthTests: XCTestCase {
 
     // MARK: - sessionserver textures
 
-    /// 构造 sessionserver 响应：properties[].textures 的 value 是 Base64 编码的 JSON。
+    /// 构造 sessionserver 响应：properties[].textures 的 value 是 Base64 编码的 JSON，
+    /// 解开后是 {"textures": {"SKIN": {...}, "CAPE": {...}}}（注意外层 textures 包裹）。
     private func texturesPayload(skinModel: String?, cape: Bool) -> Data {
         var skin = "{\"url\": \"https://skin.example.com/texture.png\""
         if let skinModel {
@@ -166,11 +167,11 @@ final class YggdrasilAuthTests: XCTestCase {
         }
         skin += "}"
 
-        var textures = "{\"SKIN\": \(skin)"
+        var inner = "\"SKIN\": \(skin)"
         if cape {
-            textures += ", \"CAPE\": {\"url\": \"https://skin.example.com/cape.png\"}"
+            inner += ", \"CAPE\": {\"url\": \"https://skin.example.com/cape.png\"}"
         }
-        textures += "}"
+        let textures = "{\"textures\": {\(inner)}}"
 
         let value = Data(textures.utf8).base64EncodedString()
         return Data("{\"properties\": [{\"name\": \"textures\", \"value\": \"\(value)\"}]}".utf8)

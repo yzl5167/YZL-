@@ -127,6 +127,14 @@ enum ModpackImporter {
         "minecraftinstance.json", "instance.cfg", "Setup.ini",
         "yzl.modpack.json", "icon.png", "cover.png"
     ]
+    /// 「这是真的整合包内容」判定：目录与文件两张白名单（对照 Windows 端）。
+    private static let contentDirectories: Set<String> = [
+        "mods", "config", "defaultconfigs", "resourcepacks", "shaderpacks",
+        "saves", "scripts", "kubejs", "datapacks"
+    ]
+    private static let contentFileNames: Set<String> = [
+        "options.txt", "optionsof.txt", "servers.dat"
+    ]
 
     // MARK: 格式判定与解析
 
@@ -192,8 +200,16 @@ enum ModpackImporter {
 
         // 空壳拦截要在「没写 Minecraft 版本」之前：一个只有 readme 的 zip
         // 应报「没有可安装内容」，而不是「没指定版本」。
+        // 「可安装内容」按 Windows 端 ArchiveHasInstallableContent 的口径：
+        // 内容目录（mods/config/saves 等）或明确的配置文件，随便什么小文件不算。
         let extractItems = buildExtractItems(stripped: stripped, format: format)
-        guard !extractItems.isEmpty || partial.onlineFiles != nil || partial.curseForgeFiles != nil else {
+        let hasOnline = (partial.onlineFiles?.isEmpty == false) || (partial.curseForgeFiles?.isEmpty == false)
+        let hasLocalContent = extractItems.contains { item in
+            let parts = item.relativePath.split(separator: "/")
+            if parts.count > 1, contentDirectories.contains(String(parts[0])) { return true }
+            return contentFileNames.contains(item.relativePath)
+        }
+        guard hasOnline || hasLocalContent else {
             throw ModpackError.emptyArchive
         }
 
