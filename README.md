@@ -343,7 +343,7 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 ## 合规
 
 - 不内置游戏文件，资源从 Mojang 官方获取；用户必须自己拥有 Minecraft。
-- PojavLauncher_iOS 已归档；活跃继任者 Amethyst-iOS 为 GPLv3。M2 复用其 JRE / 启动层后，iOS 端相关部分及衍生作品需要按 GPLv3 开源。目前 M0 外壳不包含上游代码。
+- PojavLauncher_iOS 已归档；活跃继任者 Amethyst-iOS 为 GPLv3。M2 复用其 JRE / 启动层后，iOS 端相关部分及衍生作品需要按 GPLv3 开源。纯 SwiftUI 外壳预览包不含上游代码，但**引擎包包含**，详见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。仓库目前仍为私有、缺少 `LICENSE`，**对外分发引擎 IPA 前必须补齐对应源码与许可声明**，这是尚未完成的合规义务。
 - 与 Mojang、Microsoft、Amethyst / PojavLauncher 团队无隶属关系。
 
 ## 已确定的路线（2026-11-04）

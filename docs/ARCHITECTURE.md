@@ -61,7 +61,7 @@ M0/M1 实现不依赖 JVM 的部分：界面、版本清单、账户、安装、
    - 拉取 `version_manifest_v2.json` 选择版本；
    - 拉取版本 JSON，解析 libraries、assetIndex、downloads；
    - 按 iOS 规则过滤依赖库；JRE 与 iOS 原生库由 M2 引擎提供，不计入安装清单。
-2. **分片下载**（`SegmentedDownloader` 已按此实现，未编译）
+2. **分片下载**（`SegmentedDownloader` 已按此实现，已编译通过）
    - 先用 `HEAD` 探测：`Accept-Ranges: bytes` + `Content-Length` 才走分片，否则直接单连接；
    - 默认 1 MiB 分片，连接数 8（可配置 1–16），单请求超时 15 s，分片重试 3 次（0.5/1.0/1.5 s 退避）；
    - 一个**尚未写入任何字节**的分片在重试耗尽后拆成两半重新排队，避免尾部长尾；已有进度的分片只续传不拆分；
@@ -72,7 +72,7 @@ M0/M1 实现不依赖 JVM 的部分：界面、版本清单、账户、安装、
    - 合并后做 SHA-1 校验，失败即删除临时文件并报错；
    - 全部完成前进度不到 100%，不显示"已完成"。
    - 已知取舍：单连接回退模式用逐字节流式读取，进度真实但吞吐较低；分片模式是主路径。
-4. **安装清单与队列**（`InstallPlanner` + `DownloadQueue`，已实现，未编译）
+4. **安装清单与队列**（`InstallPlanner` + `DownloadQueue`，已实现，已编译通过）
    - Mojang 规则语义：无规则即必需；有规则时以最后一条匹配规则为准；没有任何规则匹配则不必需。因此 iOS 下 osx/windows/linux 专用库全部排除，`net.java.jinput:jinput-platform` 这类只有 classifiers（原生件）的库直接跳过——iOS 原生库由引擎提供。
    - 清单 = 客户端 jar + 依赖库 + 资源索引，再展开资源对象并按 sha1 去重。1.20.1 实测：45 个基础文件 + 3,575 个资源对象 = **3,620 个文件、约 732 MB**。
    - 队列文件级并发 8；单文件 > 4 MiB 才在内部开 8 路分片，小文件走单连接，避免上千个小文件互相抢连接。
@@ -80,7 +80,7 @@ M0/M1 实现不依赖 JVM 的部分：界面、版本清单、账户、安装、
    - 下载前把版本 JSON 编码保存到版本目录；全部文件通过 SHA-1 后写 `installed.json`（文件数、总字节、Java 主版本、资源索引、安装时间），并自动设为当前版本。失败/取消不写记录。
    - JRE 与 iOS 原生库不在这条清单里，由 M2 引擎侧提供；不做"假安装"。
 
-5. **启动链**（`LaunchPlanBuilder` + `LaunchCommand` + `EngineBridge`，已实现到引擎边界，未编译）
+5. **启动链**（`LaunchPlanBuilder` + `LaunchCommand` + `EngineBridge`，已实现到引擎边界，已编译通过）
    - 启动自检依次核对：微软账户与令牌（快过期时自动续期）、安装记录、版本 JSON、客户端 jar、依赖库、资源索引、JRE、JIT、Amethyst 内核、内存上限。
    - 通过后生成 `LaunchPlan`：classpath（客户端 jar + iOS 规则过滤后的库）、主类、`--assetIndex` / `--gameDir` / `--uuid` / `--accessToken` 等游戏参数，以及 `-Xmx` / `-Djava.library.path` 等 JVM 参数。
    - 访问令牌只存在于内存中的 `gameArguments`，不写日志、不落盘；界面只显示不含令牌的摘要。
@@ -125,7 +125,7 @@ M1 的验收：同一网络下与单线程下载对比总耗时；弱网断点�
 
 ## 9. 已知风险
 
-- GPLv3 与闭源分发冲突，需要尽早定路线。
+- GPLv3 与闭源分发冲突：路线已定为「链接引擎的 iOS 端按 GPLv3 开源」，分发引擎包时的具体义务见 [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md)。目前仓库仍为私有，**对外分发引擎 IPA 前必须先补齐对应源码与许可声明**。
 - Amethyst / Pojav 内核的接口和资源布局随版本变化，接之前先锁定一个可工作的上游提交，并保留可回退的基线。
 - iOS 系统升级可能改变 JIT 可用性，工具链要按设备/系统版本分开验证。
 - 非官方启动器不受 Mojang 支持，账号异常风险由用户承担，需在关于页说明。
