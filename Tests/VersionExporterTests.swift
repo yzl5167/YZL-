@@ -219,13 +219,14 @@ final class VersionExporterTests: XCTestCase {
         try Data("crash".utf8).write(to: game.appendingPathComponent("crash-reports/crash.txt"))
         try Data("junk".utf8).write(to: game.appendingPathComponent(".DS_Store"))
 
+        let exportDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yzl-export-test-\(UUID().uuidString)", isDirectory: true)
+
         defer {
             try? fm.removeItem(at: root)
             try? fm.removeItem(at: exportDir)
         }
 
-        let exportDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("yzl-export-test-\(UUID().uuidString)", isDirectory: true)
         let destination = exportDir.appendingPathComponent(VersionExporter.suggestedName(for: versionID))
         let result = try VersionExporter.export(versionID: versionID, to: destination)
 
