@@ -914,7 +914,7 @@ final class AppState: ObservableObject {
             checks.append(LaunchCheck(
                 id: "java",
                 title: "Java 运行时",
-                detail: "没有找到 iOS JRE。M2 会随引擎放入 java_runtimes 目录。",
+                detail: "没有找到 iOS JRE。完整版 YZL-engine.tipa 已内置 JRE 8/17——请确认安装的是完整版而不是 1.7MB 的纯外壳包。",
                 status: .failed
             ))
         }
@@ -960,7 +960,7 @@ final class AppState: ObservableObject {
                 checks.append(LaunchCheck(
                     id: "engine",
                     title: "启动内核",
-                    detail: "Amethyst 内核尚未安装（\(payload.summary)）。安装与启动参数已就绪，接入后即可拉起 JVM。",
+                    detail: "Amethyst 内核尚未安装（\(payload.summary)）。请安装完整版 YZL-engine.tipa（106MB，含内核与 JRE）——你现在装的 1.7MB 外壳包只含界面。",
                     status: .failed
                 ))
             }
