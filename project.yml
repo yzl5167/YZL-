@@ -35,7 +35,7 @@ targets:
     info:
       path: YZLLauncher/Info.plist
       properties:
-        CFBundleDisplayName: YZL Launcher
+        CFBundleDisplayName: YZL 外壳（测试）
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSRequiresIPhoneOS: true
