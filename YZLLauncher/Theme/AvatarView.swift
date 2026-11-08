@@ -1,6 +1,16 @@
 import SwiftUI
 import UIKit
 
+/// 全端统一头像：和 PC 端 `AvatarRenderer.GetHead` / Android 端 `PclAvatarRenderer`
+/// 同参数的 **PCL 同款 2D 像素头像** —— 脸层 48×48、帽层 56×56 叠在脸层上、
+/// 四周 `#AEB8C6` 1px 描边、最近邻放大、无底板无圆角。
+///
+/// 2026-11-08 之前这里同时存在两套实现：主页大头像走 PCL 风格，而侧栏 /
+/// 账号 / 设置 / 皮肤 / 启动面板走 `SkinTexture.head` 只裁 8×8 头部放大。
+/// 按「改回之前的、和 PC 端一样」的要求统一成同一个类型；用 typealias 而不是
+/// 再定义一个 struct，避免同名重复声明与互相包装成递归（11/8 编译红的原因）。
+typealias AvatarView = PclAvatarView
+
 enum SkinTexture {
     /// Mojang 皮肤贴图（新版 64×64、旧版 64×32）的头部 8×8 像素固定在 (8,8)。
     /// 返回按实际贴图宽度缩放后的裁剪框；贴图太小则视为无效。
@@ -58,11 +68,9 @@ enum SkinTexture {
     }
 }
 
-// 注意：AvatarView 的唯一实现放在 Theme/PclAvatarView.swift。
-// 这里只保留皮肤贴图工具与 SkinBodyView，避免同名 View 重复声明。
-// 11/8 曾在本文件加入一个「包装 PclAvatarView」的 AvatarView，与
-// PclAvatarView.swift 里的真实实现同名，导致 invalid redeclaration、
-// init(size:account:defaultModel:) 歧义，且两者互相包装成递归。
+// 头像统一走 PclAvatarView（见文件顶部 typealias）；本文件只保留皮肤贴图工具
+// 与 SkinBodyView。SkinTexture.head 仍保留供纹理表相关逻辑/测试使用，
+// 但不再作为任何头像的渲染方式。
 
 /// 展示整张皮肤贴图（纹理表，不是立体模型）。
 /// 统一走 UIImage 加载，才能按贴图原始比例渲染：旧皮肤是 64×32（2:1），
