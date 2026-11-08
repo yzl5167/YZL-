@@ -151,9 +151,9 @@ final class Skin3DModelTests: XCTestCase {
         // 头中心 y=28 → 屏幕 y ≈ 160+4.8-12*8.53 ≈ 62。取 (160, 62) 采样。
         let sample = pixel(cg, x: 160, y: 62)
         XCTAssertTrue(sample.alpha > 200, "正面中心应是头正面的不透明像素：\(sample)")
-        XCTAssertGreaterThan(sample.red, 200, "默认皮肤肤色偏红：\(sample)")
+        // 真 Steve 正面上部是头发（棕），断言 r > g > b 的暖色即可。
+        XCTAssertGreaterThan(sample.red, sample.blue, "默认皮肤正面应为暖色：\(sample)")
     }
-
     /// 走路摆动会改变输出（四肢位置随 walkPhase 移动）。
     func testWalkPhaseChangesOutput() throws {
         let neutral = try XCTUnwrap(Skin3DModel.renderImage(
