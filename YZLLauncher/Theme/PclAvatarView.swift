@@ -59,9 +59,11 @@ struct AvatarView: View {
     }
 
     /// 加载内置默认皮肤并裁出头像。
+    /// `Skin3DModel.defaultSkin(model:)` 返回非 Optional 的 UIImage（找不到内置
+    /// 皮肤时会退回程序化生成的兜底图），所以不能对它用 `guard let`。
     private var defaultHead: UIImage? {
-        guard let skin = Skin3DModel.defaultSkin(model: defaultModel),
-              let head = SkinTexture.head(from: skin, targetSize: size * 3) else {
+        let skin = Skin3DModel.defaultSkin(model: defaultModel)
+        guard let head = SkinTexture.head(from: skin, targetSize: size * 3) else {
             return nil
         }
         return head

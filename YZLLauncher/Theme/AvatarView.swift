@@ -58,19 +58,11 @@ enum SkinTexture {
     }
 }
 
-/// 用户真实 Minecraft 皮肤头像：与主页大头像同一条 PCL 渲染链
-/// （脸层 + 帽层 + 灰描边），保证侧栏 / 账号页 / 设置页与主页完全一致。
-/// 未登录或无皮肤时显示内置真 Steve 默认皮肤。
-struct AvatarView: View {
-    let size: CGFloat
-    let account: MicrosoftAccount?
-    /// 无自定义皮肤时的默认皮肤模型："steve" / "alex"。
-    var defaultModel: String = "steve"
-
-    var body: some View {
-        PclAvatarView(size: size, account: account, defaultModel: defaultModel)
-    }
-}
+// 注意：AvatarView 的唯一实现放在 Theme/PclAvatarView.swift。
+// 这里只保留皮肤贴图工具与 SkinBodyView，避免同名 View 重复声明。
+// 11/8 曾在本文件加入一个「包装 PclAvatarView」的 AvatarView，与
+// PclAvatarView.swift 里的真实实现同名，导致 invalid redeclaration、
+// init(size:account:defaultModel:) 歧义，且两者互相包装成递归。
 
 /// 展示整张皮肤贴图（纹理表，不是立体模型）。
 /// 统一走 UIImage 加载，才能按贴图原始比例渲染：旧皮肤是 64×32（2:1），

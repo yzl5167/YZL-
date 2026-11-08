@@ -111,8 +111,12 @@ fi
 
 # ---- YZL fork 补丁③：SceneDelegate 根视图让位给 YZL UI ----
 # Amethyst 的根装配在 SceneDelegate.m 的 launchInitialViewController(self.window)。
-# 在其之前尝试 dlopen YZLUI.framework：命中 YZLUIRootController 就接管根视图，
-# 未命中（无框架）继续走原生 UI，永不卡死。
+# 2026-11-08 实机反馈「打开一直纯黑」后加固：
+#   1) 注入放在原生装配【之后】，确保 self.window 已存在，不再给 nil window 设根视图；
+#   2) dlopen 不再猜 privateFrameworksPath，显式枚举 Frameworks/ 与 PrivateFrameworks/；
+#   3) 加载失败不再静默回退（原生界面在无 JIT 时就是纯黑），改为叠加可见诊断条，
+#      并 NSLog 打印 dlerror，方便下一轮真机定位。
+# 未命中（无框架）仍继续走原生 UI，永不卡死构建。
 SD="$AMETHYST_DIR/Natives/SceneDelegate.m"
 if [ -f "$SD" ]; then
   if grep -q "YZLUIRootController" "$SD"; then
@@ -134,22 +138,55 @@ if "#include <dlfcn.h>" not in src and "#import <dlfcn.h>" not in src:
     if import_needle in src:
         src = src.replace(import_needle, import_needle + '\n#include <dlfcn.h>', 1)
 
-injection = '''    // ---- YZL UI injection (M2-b patch 3) ----
+injection = '''    // ---- YZL UI injection (M2-b patch 3, hardened 2026-11-08) ----
     {
-        NSString *yzlFrameworkPath = [NSBundle.mainBundle.privateFrameworksPath
-            stringByAppendingPathComponent:@"YZLUI.framework/YZLUI"];
-        void *yzlHandle = dlopen(yzlFrameworkPath.fileSystemRepresentation, RTLD_LAZY);
-        Class yzlRootClass = yzlHandle ? NSClassFromString(@"YZLUIRootController") : nil;
-        if (yzlRootClass) {
-            UIViewController *yzlRoot = [yzlRootClass new];
-            self.window.rootViewController = yzlRoot;
-            NSLog(@"[YZL] YZLUI.framework loaded, YZL UI takes over");
-            return;
+        NSBundle *yzlBundle = [NSBundle mainBundle];
+        NSArray<NSString *> *yzlCandidates = @[
+            [[yzlBundle bundlePath] stringByAppendingPathComponent:@"Frameworks/YZLUI.framework/YZLUI"],
+            [[yzlBundle privateFrameworksPath] stringByAppendingPathComponent:@"YZLUI.framework/YZLUI"],
+            [[yzlBundle bundlePath] stringByAppendingPathComponent:@"PrivateFrameworks/YZLUI.framework/YZLUI"]
+        ];
+        void *yzlHandle = NULL;
+        NSString *yzlUsedPath = nil;
+        NSString *yzlLastError = nil;
+        for (NSString *yzlPath in yzlCandidates) {
+            if (![[NSFileManager defaultManager] fileExistsAtPath:yzlPath]) continue;
+            dlerror();
+            yzlHandle = dlopen(yzlPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
+            if (yzlHandle) { yzlUsedPath = yzlPath; break; }
+            const char *yzlErr = dlerror();
+            yzlLastError = yzlErr ? [NSString stringWithUTF8String:yzlErr] : @"unknown dlopen error";
+            NSLog(@"[YZL] dlopen failed %@: %@", yzlPath, yzlLastError);
         }
-        NSLog(@"[YZL] YZLUI.framework not present, falling back to Amethyst UI");
+        Class yzlRootClass = yzlHandle ? NSClassFromString(@"YZLUIRootController") : nil;
+        UIWindow *yzlWindow = self.window;
+        if (!yzlWindow) {
+            for (UIWindow *yzlW in [UIApplication sharedApplication].windows) {
+                if (yzlW.isKeyWindow) { yzlWindow = yzlW; break; }
+            }
+        }
+        if (yzlRootClass && yzlWindow) {
+            yzlWindow.rootViewController = [yzlRootClass new];
+            [yzlWindow makeKeyAndVisible];
+            NSLog(@"[YZL] YZLUI loaded from %@, YZL UI takes over", yzlUsedPath);
+        } else {
+            NSString *yzlMsg = yzlLastError ?: @"YZLUI.framework 不存在或 YZLUIRootController 未注册";
+            if (yzlWindow) {
+                UILabel *yzlLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, yzlWindow.bounds.size.width, 96)];
+                yzlLabel.text = [NSString stringWithFormat:@"YZL UI 加载失败\\n%@\\n请截图反馈", yzlMsg];
+                yzlLabel.numberOfLines = 0;
+                yzlLabel.textAlignment = NSTextAlignmentCenter;
+                yzlLabel.font = [UIFont systemFontOfSize:12];
+                yzlLabel.textColor = [UIColor whiteColor];
+                yzlLabel.backgroundColor = [UIColor colorWithRed:0.78 green:0.12 blue:0.12 alpha:0.92];
+                [yzlWindow addSubview:yzlLabel];
+            }
+            NSLog(@"[YZL] YZLUI load failed: %@ (candidates=%@, window=%@)", yzlMsg, yzlCandidates, yzlWindow);
+        }
     }
 '''
-src = src.replace(call_needle, injection + call_needle, 1)
+# 放在原生装配之后：此时 self.window 必然已创建，避免给 nil window 设根视图导致纯黑屏。
+src = src.replace(call_needle, call_needle + "\n" + injection, 1)
 with open(path, "w", encoding="utf-8") as f:
     f.write(src)
 print("[patch] SceneDelegate.m: YZL UI 注入点已插入")
