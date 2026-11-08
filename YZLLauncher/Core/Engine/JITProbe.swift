@@ -3,60 +3,197 @@ import Foundation
 import Darwin
 #endif
 
-/// JIT 可用性探测——**如实检测本机能力，不猜获取方式**。
+/// JIT 可用性探测——**逐条移植引擎本体 Amethyst 的 `isJITEnabled`**（Natives/utils.m），
+/// 保证外壳显示的状态与引擎实际判定完全一致。
 ///
-/// 获取 JIT 的途径很多：TrollStore、越狱（AMFI 放行）、带 JIT entitlement 的
-/// 签名方式、调试器附加（StikDebug / SideJITServer）等。这里不枚举来源，
-/// 只对内核做两条真实的能力测试，任一成功即认为本机可用 JIT：
+/// 真实具备 JIT 的三条路径：
+/// 1. 进程带 `dynamic-codesigning` entitlement（部分签名/重打包方式会带上）；
+/// 2. 越狱设备（substrate / dyld 钩子 / 平台位 / /Applications 目录任一命中）；
+/// 3. `csops` 查到 `CS_DEBUGGED`（TrollStore 启动或调试器附加）。
+/// iOS 26+ 带 TXM 的设备还要求调试器保持附加（getppid != launchd）。
 ///
-/// 1. **MAP_JIT 分配**：`mmap(PROT_EXEC | MAP_JIT)`——这是带 JIT entitlement
-///    的签名方式（如 allow-jit）所走的正规通道，普通签名会被 EPERM 拒绝；
-/// 2. **mprotect 加执行位**：先 RW 匿名页再 `mprotect` 加 X——TrollStore /
-///    越狱内核放行的环境下会成功，普通签名失败。
-///
-/// 两条都不涉及执行代码，探测本身不会触发代码签名击杀，安全。
-/// 上个版本的 csops 白名单已移除：它会对越狱等「非平台签名但有 JIT」的
-/// 设备产生假阴性，与「如实检测」的目标相悖。
+/// 不再使用 mmap/mprotect 探测：惰性分配在普通侧载环境会假成功
+/// （2026-11-08 用户实测：侧载未配对却显示已启用）。
 enum JITProbe {
     typealias Probe = () -> Bool
 
-    /// MAP_JIT 在 arm64 的值（iOS SDK 未公开该常量，按稳定 ABI 手写）。
-    private static let MAP_JIT: Int32 = 0x800
+    private static let CS_OPS_STATUS: UInt32 = 0
+    private static let CS_PLATFORM_BINARY: UInt32 = 0x0400_0000
+    private static let CS_DEBUGGED: UInt32 = 0x1000_0000
 
-    /// 路径一：MAP_JIT 匿名分配（带 JIT entitlement 的签名方式走这条）。
-    static func mapJITProbe() -> Bool {
-        let size = Int(getpagesize())
-        let failed = UnsafeMutableRawPointer(bitPattern: -1)
-        guard let base = mmap(nil, size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                              MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0),
-              base != failed else {
-            return false
-        }
-        defer { munmap(base, size) }
-        return true
-    }
-
-    /// 路径二：mprotect 给匿名页加执行位（TrollStore / 越狱内核放行走这条）。
-    static func mprotectProbe() -> Bool {
-        let size = Int(getpagesize())
-        let failed = UnsafeMutableRawPointer(bitPattern: -1)
-        guard let base = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0),
-              base != failed else {
-            return false
-        }
-        defer { munmap(base, size) }
-        return mprotect(base, size, PROT_READ | PROT_WRITE | PROT_EXEC) == 0
-    }
+    private static let FLAG_IS_IOS_26: UInt32 = 1
+    private static let FLAG_FORCE_MIRRORED: UInt32 = 2
+    private static let FLAG_HAS_TXM: UInt32 = 4
 
     static func systemProbe() -> Bool {
         #if canImport(Darwin)
-        return mapJITProbe() || mprotectProbe()
+        return isJITEnabled(checkCSFlags: false)
         #else
         return false
         #endif
     }
 
-    static func detect(using probe: Probe = JITProbe.systemProbe) -> JITStatus {
-        probe() ? .enabled : .disabled
+    // MARK: - isJITEnabled（Amethyst utils.m 原样移植）
+
+    static func isJITEnabled(checkCSFlags: Bool) -> Bool {
+        if !checkCSFlags, hasDynamicCodesigningEntitlement() || isJailbroken() {
+            return true
+        }
+
+        guard let flags = csopsFlags() else { return false }
+        if flags & CS_DEBUGGED == 0 {
+            return false
+        }
+        if deviceJITFlags() & (FLAG_FORCE_MIRRORED | FLAG_HAS_TXM) != (FLAG_FORCE_MIRRORED | FLAG_HAS_TXM) {
+            // iOS 26 以下、或无 TXM 的设备：CS_DEBUGGED 已经足够。
+            return true
+        }
+        // iOS 26+ 带 TXM：需要调试器保持附加（父进程不是 launchd）。
+        return getppid() != 1
+    }
+
+    // MARK: - csops
+
+    private static func csopsFlags() -> UInt32? {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "csops") else {
+            return nil
+        }
+        typealias CSOpsFn = @convention(c) (Int32, UInt32, UnsafeMutableRawPointer, Int) -> Int32
+        let csops = unsafeBitCast(symbol, to: CSOpsFn.self)
+        var flags: UInt32 = 0
+        guard csops(getpid(), CS_OPS_STATUS, &flags, MemoryLayout<UInt32>.size) == 0 else {
+            return nil
+        }
+        return flags
+    }
+
+    // MARK: - entitlement 检查（Amethyst getEntitlementValue 的 Swift 版）
+
+    private static func hasDynamicCodesigningEntitlement() -> Bool {
+        entitlementBool("dynamic-codesigning")
+    }
+
+    private static func entitlementBool(_ key: String) -> Bool {
+        guard let createSym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecTaskCreateFromSelf"),
+              let copySym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecTaskCopyValueForEntitlement") else {
+            return false
+        }
+        typealias CreateFn = @convention(c) (CFAllocator?) -> UnsafeMutableRawPointer?
+        typealias CopyFn = @convention(c) (UnsafeMutableRawPointer?, CFString, UnsafeMutablePointer<Unmanaged<CFTypeRef>?>?) -> Unmanaged<CFTypeRef>?
+        let create = unsafeBitCast(createSym, to: CreateFn.self)
+        let copy = unsafeBitCast(copySym, to: CopyFn.self)
+
+        guard let task = create(nil) else { return false }
+        defer { deallocateSecTask(task) }
+        var out: Unmanaged<CFTypeRef>?
+        guard let retained = copy(task, key as CFString, &out) else { return false }
+        let value = retained.takeRetainedValue() as Any
+        // 与 ObjC 版一致：非数字值视为 true；数字值取 boolValue。
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        return true
+    }
+
+    /// SecTaskRef 是 +0 返回的 CF 对象，这里手动释放（不暴露 CFRelease 类型细节）。
+    private static func deallocateSecTask(_ task: UnsafeMutableRawPointer) {
+        guard let releaseSym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CFRelease") else { return }
+        typealias ReleaseFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
+        let release = unsafeBitCast(releaseSym, to: ReleaseFn.self)
+        release(task)
+    }
+
+    // MARK: - 越狱检测（Amethyst init_checkForJailbreak 原样移植）
+
+    static func isJailbroken() -> Bool {
+        if ProcessInfo.processInfo.isMacCatalystApp {
+            // macOS 不会自动开 JIT。
+            return false
+        }
+        if isSubstrated() {
+            return true
+        }
+
+        // posix_spawn 是否被越狱钩子替换。
+        for index in 0..<_dyld_image_count() {
+            guard let name = _dyld_get_image_name(index) else { continue }
+            let path = String(cString: name)
+            if path == "/usr/lib/pspawn_payload-stg2.dylib" || path.contains("systemhook.dylib") {
+                return true
+            }
+        }
+
+        // 平台位（TrollStore / 系统级签名）。
+        if let flags = csopsFlags(pid: 0), flags & CS_PLATFORM_BINARY != 0 {
+            return true
+        }
+
+        // 越狱文件系统的典型目录。
+        let applications = opendir("/Applications")
+        if applications != nil {
+            closedir(applications)
+            return true
+        }
+        return false
+    }
+
+    private static func isSubstrated() -> Bool {
+        let substratePaths = [
+            "/Library/MobileSubstrate/MobileSubstrate.dylib",
+            "/usr/lib/substrate/SubstrateInserter.dylib",
+            "/usr/lib/substrate/SubstrateLauncher.dylib",
+            "/usr/lib/TweakInject.dylib"
+        ]
+        return substratePaths.contains { access($0, F_OK) == 0 }
+    }
+
+    // MARK: - iOS 26 / TXM（Amethyst DeviceGetJITFlags 原样移植）
+
+    private static var cachedFlags: UInt32?
+
+    private static func deviceJITFlags() -> UInt32 {
+        if let cached = cachedFlags { return cached }
+        var flags: UInt32 = 0
+        if #available(iOS 26.0, *) {
+            flags |= FLAG_IS_IOS_26
+            if !canCreateRXMap() {
+                flags |= FLAG_FORCE_MIRRORED
+            }
+        }
+        if deviceHasTXM() {
+            flags |= FLAG_HAS_TXM
+        }
+        cachedFlags = flags
+        return flags
+    }
+
+    /// Amethyst DeviceCanCreateRXMap：JIT 已启用时此测试才准确
+    /// （vphone 等内部环境用），失败会触发 FORCE_MIRRORED。
+    private static func canCreateRXMap() -> Bool {
+        let size = Int(getpagesize())
+        let failed = UnsafeMutableRawPointer(bitPattern: -1)
+        guard let base = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0),
+              base != failed else {
+            return false
+        }
+        defer { munmap(base, size) }
+        base.assumingMemoryBound(to: UInt32.self).pointee = 0xFFFFFFFF
+        let first = mprotect(base, size, PROT_READ | PROT_EXEC)
+        let second = mprotect(base, size, PROT_READ | PROT_EXEC)
+        return (first | second) == 0
+    }
+
+    /// TXM（TrustedExecutionMonitor）存在 = iOS 26.5- 的严格签名环境。
+    private static func deviceHasTXM() -> Bool {
+        guard let dir = opendir("/private/preboot") else { return false }
+        defer { closedir(dir) }
+        while let entry = readdir(dir) {
+            let nameLength = strlen(entry.pointee.d_name)
+            if nameLength == 96 {
+                let txmPath = "/private/preboot/\(String(cString: entry.pointee.d_name))/usr/standalone/firmware/FUD/Ap,TrustedExecutionMonitor.img4"
+                return access(txmPath, F_OK) == 0
+            }
+        }
+        return false
     }
 }
