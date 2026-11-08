@@ -17,6 +17,10 @@ import Darwin
 enum JITProbe {
     typealias Probe = () -> Bool
 
+    static func detect(using probe: Probe = JITProbe.systemProbe) -> JITStatus {
+        probe() ? .enabled : .disabled
+    }
+
     private static let CS_OPS_STATUS: UInt32 = 0
     private static let CS_PLATFORM_BINARY: UInt32 = 0x0400_0000
     private static let CS_DEBUGGED: UInt32 = 0x1000_0000
