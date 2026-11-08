@@ -122,3 +122,16 @@ final class EngineIntegrationTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 启动内核符号查找回归（2026-11-08 真机「提示没有启动内核」）
+final class EngineSymbolResolverTests: XCTestCase {
+    /// 查找链至少要能命中全局作用域符号。旧实现 `dlsym(nil, ...)` 在
+    /// dlopen 加载的 YZLUI.framework 里查不到主程序符号，连全局链也可能断。
+    func testResolverReachesGlobalScope() {
+        XCTAssertNotNil(EngineSymbolResolver.resolve("malloc"))
+    }
+
+    func testResolverReturnsNilForUnknownSymbol() {
+        XCTAssertNil(EngineSymbolResolver.resolve("yzl_missing_symbol_12345"))
+    }
+}

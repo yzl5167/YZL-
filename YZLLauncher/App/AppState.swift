@@ -953,14 +953,14 @@ final class AppState: ObservableObject {
                 checks.append(LaunchCheck(
                     id: "engine",
                     title: "启动内核",
-                    detail: "引擎件齐备，但启动桥未接入（当前为纯外壳构建）。安装 fork 引擎构建后即可拉起 JVM。",
+                    detail: "JRE / 图形层 / Java 桥都齐，但运行时没查到主程序的 launchJVM 符号。请确认装的是 fork 引擎单包（YZL-engine-sideload-unsigned.ipa 或 .tipa），并在设备日志里找 [YZL] launchJVM 一行反馈；纯外壳 IPA 只有界面。",
                     status: .failed
                 ))
             } else {
                 checks.append(LaunchCheck(
                     id: "engine",
                     title: "启动内核",
-                    detail: "Amethyst 内核尚未安装（\(payload.summary)）。请安装完整版 YZL-engine.tipa（106MB，含内核与 JRE）——你现在装的 1.7MB 外壳包只含界面。",
+                    detail: "引擎件不齐（\(payload.summary)）。请安装 fork 引擎单包 YZL-engine-sideload-unsigned.ipa（iOS 18 侧载）或 YZL-engine.tipa（TrollStore）；1.1MB 的 YZLLauncher-unsigned.ipa 只是 UI 预览壳。",
                     status: .failed
                 ))
             }

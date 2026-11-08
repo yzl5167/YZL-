@@ -65,7 +65,7 @@ enum EngineError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notIntegrated:
-            return "启动内核尚未接入（M2）。下载与启动参数已经就绪，接入 Amethyst 后即可拉起 JVM。"
+            return "没找到启动内核的 launchJVM 入口。若已装 fork 引擎单包，请把设备日志里 [YZL] launchJVM 一行反馈；若装的是 1.1MB 外壳 IPA，请改装 YZL-engine-sideload-unsigned.ipa 或 .tipa。"
         case .runtimeMissing:
             return "没有找到可用的 iOS JRE。"
         case .jitDisabled:

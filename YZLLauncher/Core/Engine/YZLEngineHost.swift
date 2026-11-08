@@ -13,6 +13,32 @@ import Darwin
 ///   交给 fork 内打了补丁的 `PojavLauncher` Java 主类；
 /// - 游戏画面由 fork 的 `SurfaceViewController` 承载，这里用运行时类查找呈现，
 ///   编译期不依赖任何 Amethyst 源码——纯外壳构建保持全绿。
+/// Darwin 的 dlsym 句柄常量与可靠符号查找。
+///
+/// 真机反馈（2026-11-08）：装完整引擎包后仍提示「没有启动内核」。
+/// 根因不是缺内核——主二进制的 dyld 导出表里确实有 `_launchJVM`——
+/// 而是 `YZLUI.framework` 由 SceneDelegate `dlopen` 加载，从 framework 内部
+/// 用 `dlsym(nil, ...)` 查主程序符号查不到：
+///   · NULL 不是 RTLD_DEFAULT（Darwin 上 RTLD_DEFAULT = (void *)-2，
+///     JITProbe 也是用 -2 而不是 nil）；
+///   · 即便用 RTLD_DEFAULT(-2)，语义也是「从调用者依赖链开始查」，
+///     dlopen 进来的 framework 依赖链里不含主可执行文件。
+/// 因此必须显式用 RTLD_MAIN_ONLY(-5) 查主程序，并保留全局查与显式
+/// dlopen 主可执行文件两条兜底，覆盖不同签名形态 / 系统版本。
+enum EngineSymbolResolver {
+    static func resolve(_ symbol: String) -> UnsafeMutableRawPointer? {
+        let mainOnly = UnsafeMutableRawPointer(bitPattern: -5)   // RTLD_MAIN_ONLY
+        let global = UnsafeMutableRawPointer(bitPattern: -2)     // RTLD_DEFAULT
+        if let pointer = dlsym(mainOnly, symbol) { return pointer }
+        if let pointer = dlsym(global, symbol) { return pointer }
+        if let executable = Bundle.main.executableURL?.path,
+           let handle = dlopen(executable, Int32(RTLD_NOW | RTLD_LOCAL)) {
+            return dlsym(handle, symbol)
+        }
+        return nil
+    }
+}
+
 struct YZLEngineHost: LauncherEngine {
     typealias JavaHomeProvider = () -> URL?
     typealias SymbolResolver = (String) -> UnsafeMutableRawPointer?
@@ -29,8 +55,7 @@ struct YZLEngineHost: LauncherEngine {
          javaHome: @escaping JavaHomeProvider = { RuntimeLocator.javaHome() },
          probe: @escaping JITProbe.Probe = JITProbe.systemProbe,
          resolveSymbol: @escaping SymbolResolver = { symbol in
-             // RTLD_DEFAULT 在 Apple 平台是空指针；dlsym(nil, ...) 即全局查找。
-             dlsym(nil, symbol)
+             EngineSymbolResolver.resolve(symbol)
          },
          classLookup: @escaping (String) -> AnyClass? = { NSClassFromString($0) }) {
         self.payload = payload ?? EnginePayloadLocator.scan()
@@ -40,9 +65,18 @@ struct YZLEngineHost: LauncherEngine {
         self.classLookup = classLookup
     }
 
-    /// fork 进程内 dlsym 能命中 `launchJVM` 才算桥接就绪。
+    /// fork 进程内能在主程序里查到 `launchJVM` 才算桥接就绪。
+    /// 只打一次诊断日志，方便真机抓 `[YZL]` 定位「提示没内核」的问题。
+    private static var bridgeLogEmitted = false
+
     var isRuntimeLinked: Bool {
-        resolveSymbol("launchJVM") != nil
+        let linked = resolveSymbol("launchJVM") != nil
+        if !Self.bridgeLogEmitted {
+            Self.bridgeLogEmitted = true
+            let executable = Bundle.main.executableURL?.path ?? "(nil)"
+            NSLog("[YZL] launchJVM \(linked ? "FOUND" : "NOT FOUND") | main=\(executable) | bundle=\(Bundle.main.bundleURL.lastPathComponent)")
+        }
+        return linked
     }
 
     var isAvailable: Bool {

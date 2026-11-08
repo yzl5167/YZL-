@@ -151,10 +151,20 @@ jobs:
           # 标记文件的目录会被 METHOD_JAVA_UNPACK 整体跳过，故只放目录。
           if [ ! -f java-8-openjdk/release ]; then
             echo "source B: extracting JREs from PojavLauncher iOS v2.2..."
-            curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 \
-              "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
-              -o pojav22.ipa || echo "pojav download FAILED"
-            if [ -f pojav22.ipa ]; then
+            # github.com/releases/download 域名在托管 runner 上持续返回 504，
+            # 而 GitHub API 的 release asset 端点（匿名 302 到
+            # objects.githubusercontent.com）实测可用。优先走 API，直链仅作兜底。
+            if ! curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 \
+              -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/PojavLauncherTeam/PojavLauncher_iOS/releases/assets/107024469" \
+              -o pojav22.ipa; then
+              echo "source B: API asset failed, fallback to release direct link"
+              rm -f pojav22.ipa
+              curl -fL --retry 5 --retry-all-errors --retry-delay 5 --max-time 900 \
+                "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
+                -o pojav22.ipa || echo "pojav download FAILED"
+            fi
+            if [ -f pojav22.ipa ] && [ "$(wc -c < pojav22.ipa)" -gt 100000000 ]; then
               unzip -oq pojav22.ipa -d pojav-x || true
               rm -f pojav22.ipa
               for jli in $(find pojav-x -type f -name libjli.dylib); do
