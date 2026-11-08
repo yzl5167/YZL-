@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var isProbingSources = false
     @State private var sourceProbeResults: [SourceProbeOutcome] = []
     @State private var showClearCacheConfirm = false
+    @State private var showJavaEnvironment = false
     @State private var cacheStatus: String?
 
     var body: some View {
@@ -33,6 +34,7 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     accountCard
                     launchCard
+                    javaCard
                     compatCard
                     downloadCard
                     storageCard
@@ -52,6 +54,45 @@ struct SettingsView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             pageHeader
+        }
+        .sheet(isPresented: $showJavaEnvironment) {
+            JavaEnvironmentView().environmentObject(appState)
+        }
+    }
+
+    /// Java 环境入口：对齐 PC 端设置页的 Java 管理（列表/版本/状态在 sheet 里）。
+    private var javaSummary: (required: Int, usable: [Int], shells: Int) {
+        let list = JavaEnvironment.scan(includeSize: false)
+        return (
+            JavaEnvironment.recommendedMajor(gameVersion: appState.selectedVersion?.id),
+            list.filter(\.isUsable).map(\.major),
+            list.filter { !$0.isUsable }.count
+        )
+    }
+
+    private var javaCard: some View {
+        let summary = javaSummary
+        return YZLCard {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Text("Java 环境")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(YZLTheme.text)
+                    Spacer()
+                    Button("管理") { showJavaEnvironment = true }
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                infoRow("当前需要", "Java \(summary.required)")
+                infoRow("可用运行时", summary.usable.isEmpty
+                        ? "无"
+                        : summary.usable.map { "Java \($0)" }.joined(separator: " · "))
+                if summary.shells > 0 {
+                    Text("另有 \(summary.shells) 个空壳 JRE（上游源缺失，不参与启动），点「管理」查看与导入说明。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(YZLTheme.warningText)
+                        .lineSpacing(3)
+                }
+            }
         }
     }
 

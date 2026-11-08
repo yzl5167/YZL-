@@ -424,3 +424,19 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
 4. **界面方向**：2026-11-04 晚改为固定横屏，主页/账户/关于/版本详情统一双列；竖屏布局不再维护。
 
 引擎接缝审计见 `docs/POJAV-ENGINE-AUDIT.md`（已完成初步审计）。
+
+## Java 环境（2026-11-08 补齐，对齐 PC 端）
+
+PC 端有独立的 Java 管理页（自动检测 / 从 Mojang 官方清单下载安装 / 手动指定 / 按版本选 Java / 内存与 JVM 参数）。iOS 上「在线下载任意 JRE」做不到——不允许下载执行未签名代码，官方清单也没有 iOS 平台的二进制；**其余能力全部补齐**：
+
+| 能力 | 实现 |
+| --- | --- |
+| 列出所有 JRE | `Core/Engine/JavaEnvironment.swift` 扫描 App 内 `java_runtimes/` 与 `Documents/YZLJavaRuntimes/`，读 `release` 的真实 `JAVA_VERSION`、目录体积、来源（内置/手动导入）、可用状态；空壳目录标红但不参与启动 |
+| 按游戏版本选 Java | 优先用版本 JSON 的 `javaVersion.majorVersion`，否则按 1.16 及以下 → 8、1.17–1.20 → 17、1.21+ → 21；**精确匹配**写进 `JAVA_HOME`，需要 Java 8 的版本绝不拿 17 顶替；Java 17+ 缺精确版本时允许更高版本顶替并标记警告 |
+| 启动前校验 | `AppState` 自检新增版本匹配检查（`ok` / `warning` / `failed`），缺失时给出含手动导入路径的可操作提示；`EngineLaunchContract` 的 `minJava` 与 `JAVA_HOME` 用同一套判定 |
+| 管理页 | 设置 →「Java 环境」→「管理」：当前游戏所需版本、匹配结果、全部 JRE 列表（版本/大小/来源/状态/路径）、重新扫描、手动导入说明 |
+| 内存与 JVM 参数 | 设置页内存滑块 → `AmethystPreferences` 写偏好 + `EngineJVMArguments` 追加到 `jvm_processed`；`-Xms` 保持小值、Java 9+ 启用 G1GC；Windows natives 路径类参数一律不转发 |
+| 手动导入 | 把 iOS 版 JRE 放到 `Documents/YZLJavaRuntimes/java-N-openjdk/`（需 `release` + `lib/jli/libjli.dylib` 或 `lib/server/libjvm.dylib`），点「重新扫描」即生效 |
+
+**已知限制**：引擎包内置 JRE 8 / 17 完整，**21 / 25 是空壳**（上游 CDN 已死，PojavLauncher iOS v2.2 只带 8/17），因此 1.21+ 暂不能玩；管理页会如实显示空壳状态。JRE 不能像 PC 端那样在线下载安装。`Tests/JavaEnvironmentTests.swift` 覆盖版本解析、推荐规则、扫描与精确/回退/缺失三种选择。
+

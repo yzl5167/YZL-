@@ -40,7 +40,8 @@ enum EngineSymbolResolver {
 }
 
 struct YZLEngineHost: LauncherEngine {
-    typealias JavaHomeProvider = () -> URL?
+    /// 参数是「该游戏版本需要的 Java 大版本」，不是随便拿第一个 JRE。
+    typealias JavaHomeProvider = (Int) -> URL?
     typealias SymbolResolver = (String) -> UnsafeMutableRawPointer?
 
     let name = "Amethyst 引擎（fork，YZL UI 注入）"
@@ -52,7 +53,7 @@ struct YZLEngineHost: LauncherEngine {
     private let classLookup: (String) -> AnyClass?
 
     init(payload: EnginePayloadLocator.Payload? = nil,
-         javaHome: @escaping JavaHomeProvider = { RuntimeLocator.javaHome() },
+         javaHome: @escaping JavaHomeProvider = { JavaEnvironment.home(for: $0) },
          probe: @escaping JITProbe.Probe = JITProbe.systemProbe,
          resolveSymbol: @escaping SymbolResolver = { symbol in
              EngineSymbolResolver.resolve(symbol)
@@ -84,8 +85,21 @@ struct YZLEngineHost: LauncherEngine {
     }
 
     func launch(_ plan: LaunchPlan) async throws {
-        guard let javaHome = javaHomeProvider() else {
-            throw EngineError.runtimeMissing
+        // 先确定该游戏版本需要哪个 Java，再据此挑 JRE 写进 JAVA_HOME。
+        // 旧实现用 RuntimeLocator.javaHome() 拿「第一个有效目录」，
+        // 1.16（要 Java 8）可能被塞 Java 17、1.21（要 Java 21）可能被塞 8，
+        // 这正是 PC 端「按版本自动选 Java」要解决的问题。
+        let requiredMajor = JavaEnvironment.recommendedMajor(
+            gameVersion: plan.version.id,
+            declaredMajor: plan.detail.javaVersion?.majorVersion
+        )
+        guard let javaHome = javaHomeProvider(requiredMajor) else {
+            throw EngineError.launchFailed(
+                JavaEnvironment.missingHint(
+                    required: requiredMajor,
+                    available: JavaEnvironment.availableMajors()
+                )
+            )
         }
         guard JITProbe.detect(using: probe) == .enabled else {
             throw EngineError.jitDisabled

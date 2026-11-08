@@ -903,18 +903,28 @@ final class AppState: ObservableObject {
             }
         }
 
-        if javaStatus.isReady {
+        // 对齐 PC 端：不只看「有没有 JRE」，还要看是不是当前游戏版本需要的那个 Java。
+        let requiredJava = JavaEnvironment.recommendedMajor(gameVersion: selectedVersion?.id)
+        switch JavaEnvironment.selection(for: requiredJava) {
+        case .exact(let runtime):
             checks.append(LaunchCheck(
                 id: "java",
                 title: "Java 运行时",
-                detail: javaStatus.title,
+                detail: "Java \(runtime.major)（\(runtime.versionText)）· \(runtime.sourceText) · \(runtime.sizeText)，与 \(selectedVersion?.id ?? "当前版本") 要求一致。",
                 status: .ok
             ))
-        } else {
+        case .fallback(let runtime, let required):
             checks.append(LaunchCheck(
                 id: "java",
                 title: "Java 运行时",
-                detail: "没有找到 iOS JRE。完整版 YZL-engine.tipa 已内置 JRE 8/17——请确认安装的是完整版而不是 1.7MB 的纯外壳包。",
+                detail: "需要 Java \(required)，当前只有 Java \(runtime.major)。Java 向后兼容可试，但老版本模组可能因模块化限制报错，建议安装含 Java \(required) 的引擎包。",
+                status: .warning
+            ))
+        case .missing(let required, let available):
+            checks.append(LaunchCheck(
+                id: "java",
+                title: "Java 运行时",
+                detail: JavaEnvironment.missingHint(required: required, available: available),
                 status: .failed
             ))
         }
