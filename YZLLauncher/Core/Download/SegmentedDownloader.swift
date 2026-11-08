@@ -42,8 +42,9 @@ final class SegmentedDownloader {
             self.session = session
         } else {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 30
-            config.timeoutIntervalForResource = 900
+            // 弱网下单请求 30 秒容易误杀慢速分片：放宽到 60s / 1800s。
+            config.timeoutIntervalForRequest = 60
+            config.timeoutIntervalForResource = 1800
             config.httpMaximumConnectionsPerHost = 24
             config.httpAdditionalHeaders = ["User-Agent": "YZLLauncher/0.1 (iOS)"]
             config.requestCachePolicy = .reloadIgnoringLocalCacheData

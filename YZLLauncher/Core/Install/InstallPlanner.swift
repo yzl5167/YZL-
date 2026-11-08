@@ -191,7 +191,8 @@ enum InstallPlanner {
             expectedSHA1: sha1,
             expectedSize: size,
             segmentSize: bytes > 16_777_216 ? 2_097_152 : 1_048_576,
-            maxConnections: bytes > smallFileThreshold ? 8 : 1
+            // 弱网环境靠更多并发连接拉总吞吐（每主机 24 连接上限约束总量）。
+            maxConnections: bytes > smallFileThreshold ? 16 : 1
         )
     }
 }

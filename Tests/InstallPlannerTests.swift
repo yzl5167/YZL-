@@ -67,7 +67,7 @@ final class InstallPlannerTests: XCTestCase {
         let plan = InstallPlanner.plan(detail: detail, layout: layout)
 
         let jar = try XCTUnwrap(plan.specs.first { $0.id.hasPrefix("client-") })
-        XCTAssertEqual(jar.maxConnections, 8)
+        XCTAssertEqual(jar.maxConnections, 16)
 
         let small = try XCTUnwrap(plan.specs.first { ($0.expectedSize ?? 0) < InstallPlanner.smallFileThreshold })
         XCTAssertEqual(small.maxConnections, 1)
@@ -85,7 +85,7 @@ final class InstallPlannerTests: XCTestCase {
             let prefix = String(hash.prefix(2))
             // 瀹樻柟 CDN 涓?BMCLAPI 闀滃儚鐨勬湯娈甸兘鏄?<鍓?浣?/<hash>锛?            // 杩欓噷楠岃瘉璺緞缁撴瀯锛屼笉缁戞鍏蜂綋鍩熷悕锛堜笅杞芥簮鍙湪璁剧疆閲屽垏鎹級銆?            XCTAssertTrue(file.spec.url.absoluteString.hasSuffix(prefix + "/" + hash))
             XCTAssertTrue(file.spec.destination.path.hasSuffix("assets/objects/" + prefix + "/" + hash))
-            XCTAssertEqual(file.spec.maxConnections, file.spec.expectedSize ?? 0 > InstallPlanner.smallFileThreshold ? 8 : 1)
+            XCTAssertEqual(file.spec.maxConnections, file.spec.expectedSize ?? 0 > InstallPlanner.smallFileThreshold ? 16 : 1)
         }
     }
 

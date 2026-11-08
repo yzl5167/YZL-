@@ -54,14 +54,15 @@ enum JITProbe {
 
     // MARK: - csops
 
-    private static func csopsFlags() -> UInt32? {
+    /// `pid` 传 0 等价于当前进程（与 Amethyst 的 csops(0, ...) 一致）。
+    private static func csopsFlags(pid: Int32 = getpid()) -> UInt32? {
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "csops") else {
             return nil
         }
         typealias CSOpsFn = @convention(c) (Int32, UInt32, UnsafeMutableRawPointer, Int) -> Int32
         let csops = unsafeBitCast(symbol, to: CSOpsFn.self)
         var flags: UInt32 = 0
-        guard csops(getpid(), CS_OPS_STATUS, &flags, MemoryLayout<UInt32>.size) == 0 else {
+        guard csops(pid, CS_OPS_STATUS, &flags, MemoryLayout<UInt32>.size) == 0 else {
             return nil
         }
         return flags
@@ -95,7 +96,7 @@ enum JITProbe {
         return true
     }
 
-    /// SecTaskRef 是 +0 返回的 CF 对象，这里手动释放（不暴露 CFRelease 类型细节）。
+    /// SecTaskRef 是 +0 返回的 CF 对象，这里手动释放（不直接暴露 CFRelease 类型细节）。
     private static func deallocateSecTask(_ task: UnsafeMutableRawPointer) {
         guard let releaseSym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CFRelease") else { return }
         typealias ReleaseFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -115,8 +116,8 @@ enum JITProbe {
         }
 
         // posix_spawn 是否被越狱钩子替换。
-        for index in 0..<_dyld_image_count() {
-            guard let name = _dyld_get_image_name(index) else { continue }
+        for index in 0..<Darwin._dyld_image_count() {
+            guard let name = Darwin._dyld_get_image_name(UInt32(index)) else { continue }
             let path = String(cString: name)
             if path == "/usr/lib/pspawn_payload-stg2.dylib" || path.contains("systemhook.dylib") {
                 return true
@@ -183,14 +184,17 @@ enum JITProbe {
         return (first | second) == 0
     }
 
-    /// TXM（TrustedExecutionMonitor）存在 = iOS 26.5- 的严格签名环境。
+    /// TXM（TrustedExecutionMonitor）存在 = iOS 26+ 的严格签名环境。
     private static func deviceHasTXM() -> Bool {
         guard let dir = opendir("/private/preboot") else { return false }
         defer { closedir(dir) }
         while let entry = readdir(dir) {
-            let nameLength = strlen(entry.pointee.d_name)
-            if nameLength == 96 {
-                let txmPath = "/private/preboot/\(String(cString: entry.pointee.d_name))/usr/standalone/firmware/FUD/Ap,TrustedExecutionMonitor.img4"
+            var record = entry.pointee
+            let name = withUnsafeBytes(of: &record.d_name) { raw -> String in
+                String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
+            }
+            if name.utf8.count == 96 {
+                let txmPath = "/private/preboot/\(name)/usr/standalone/firmware/FUD/Ap,TrustedExecutionMonitor.img4"
                 return access(txmPath, F_OK) == 0
             }
         }
