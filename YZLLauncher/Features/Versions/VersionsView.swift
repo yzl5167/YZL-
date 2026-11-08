@@ -188,6 +188,8 @@ private struct VersionRow: View {
                     Text(version.id)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(isSelected ? YZLTheme.accentText : YZLTheme.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     if let loader = version.loaderLabel {
                         StatusBadge(text: loader, tone: .neutral)
                     }
@@ -200,6 +202,8 @@ private struct VersionRow: View {
                 Text(version.subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
 
             Spacer(minLength: 4)
@@ -318,12 +322,17 @@ private struct VersionDetailPane: View {
                 Text(version.id)
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(YZLTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                 Text(version.subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(YZLTheme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if appState.isInstalled(version.id) {
                 Button {
@@ -341,6 +350,7 @@ private struct VersionDetailPane: View {
                 .padding(.vertical, 7)
                 .background(Capsule().fill(YZLTheme.accent))
                 .buttonStyle(.plain)
+                .fixedSize()
             }
 
             if appState.selectedVersion?.id == version.id {
@@ -348,6 +358,7 @@ private struct VersionDetailPane: View {
                     text: appState.isInstalled(version.id) ? "当前版本" : "当前 · 未安装",
                     tone: appState.isInstalled(version.id) ? .success : .warning
                 )
+                .fixedSize()
             } else if appState.isInstalled(version.id) {
                 Button("设为当前") {
                     appState.selectedVersion = version
@@ -358,8 +369,7 @@ private struct VersionDetailPane: View {
                 .padding(.vertical, 7)
                 .background(Capsule().fill(YZLTheme.accentSoft))
                 .buttonStyle(.plain)
-            } else {
-                StatusBadge(text: "未安装", tone: .neutral)
+                .fixedSize()
             }
         }
     }
@@ -447,6 +457,7 @@ private struct VersionDetailPane: View {
                         Label(isExporting ? "正在打包…" : "导出 ZIP", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(PrimaryButtonStyle(prominent: true))
+                    .frame(maxWidth: .infinity)
                     .disabled(isExporting)
 
                     Button(role: .destructive) {
@@ -455,6 +466,7 @@ private struct VersionDetailPane: View {
                         Label("删除版本", systemImage: "trash")
                     }
                     .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .frame(maxWidth: .infinity)
                 }
 
                 if let message = exportMessage {
