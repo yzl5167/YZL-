@@ -116,8 +116,9 @@ enum JITProbe {
         }
 
         // posix_spawn 是否被越狱钩子替换。
-        for index in 0..<Darwin._dyld_image_count() {
-            guard let name = Darwin._dyld_get_image_name(UInt32(index)) else { continue }
+        let imageCount = Int(dyldImageCount())
+        for index in 0..<imageCount {
+            guard let name = dyldImageName(UInt32(index)) else { continue }
             let path = String(cString: name)
             if path == "/usr/lib/pspawn_payload-stg2.dylib" || path.contains("systemhook.dylib") {
                 return true
@@ -201,3 +202,11 @@ enum JITProbe {
         return false
     }
 }
+
+
+// dyld 图片遍历函数不在 Swift 的 Darwin 模块 overlay 里，直接绑定系统符号。
+@_silgen_name("_dyld_image_count")
+private func dyldImageCount() -> UInt32
+
+@_silgen_name("_dyld_get_image_name")
+private func dyldImageName(_ image_index: UInt32) -> UnsafePointer<CChar>?
