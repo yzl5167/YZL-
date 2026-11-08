@@ -21,12 +21,16 @@ struct MinecraftServer: Codable, Identifiable, Equatable {
          lastPlayed: Date? = nil,
          note: String = "") {
         self.id = id
-        self.name = name.isEmpty ? address : name
-        self.address = address
-        self.port = port
+        // 规范化：从地址解析出主机与端口，未显式给端口时以地址里的端口为准。
+        let parsed = MinecraftServer.parse(address)
+        let effectivePort = (port == 25565) ? parsed.port : port
+        let host = parsed.host
+        self.address = "\(host):\(effectivePort)"
+        self.port = effectivePort
         self.isFavorite = isFavorite
         self.lastPlayed = lastPlayed
         self.note = note
+        self.name = name.isEmpty ? self.address : name
     }
 
     /// 去掉可能附带的端口后的纯主机名（传给游戏的 `--server` 只需要主机）。
@@ -42,6 +46,7 @@ struct MinecraftServer: Codable, Identifiable, Equatable {
     var connectAddress: String { "\(host):\(port)" }
 
     /// 从用户输入（`mc.x:25567` / `mc.x`）解析出主机与端口，缺省 25565。
+    /// 含非法端口或没有冒号时：取冒号前的部分作主機，端口回落 25565。
     static func parse(_ input: String) -> (host: String, port: Int) {
         let raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return ("", 25565) }
@@ -49,6 +54,9 @@ struct MinecraftServer: Codable, Identifiable, Equatable {
            let p = Int(raw[raw.index(after: colon)...].trimmingCharacters(in: .whitespaces)),
            (1...65535).contains(p) {
             return (String(raw[raw.startIndex..<colon]).trimmingCharacters(in: .whitespaces), p)
+        }
+        if let colon = raw.firstIndex(of: ":") {
+            return (String(raw[raw.startIndex..<colon]).trimmingCharacters(in: .whitespaces), 25565)
         }
         return (raw, 25565)
     }
