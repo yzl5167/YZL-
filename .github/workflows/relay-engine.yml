@@ -26,7 +26,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run download "${{ inputs.run_id }}" -n engine-build-main -D art --repo "${{ github.repository }}"
+          # 不写死 artifact 名：amethyst_ref 非 main 时产物名是 engine-build-<sha>。
+          gh run download "${{ inputs.run_id }}" -D art --repo "${{ github.repository }}"
           find art -type f -printf '%p %s\n'
           TIPA=$(find art -name '*.tipa' | head -1)
           test -n "$TIPA"
