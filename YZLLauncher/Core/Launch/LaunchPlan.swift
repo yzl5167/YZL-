@@ -72,7 +72,8 @@ enum LaunchPlanBuilder {
                       memoryMB: Int,
                       maxHeapMB: Int = 4096,
                       userType: String = "msa",
-                      authlibArguments: [String] = []) throws -> LaunchPlan {
+                      authlibArguments: [String] = [],
+                      server: MinecraftServer? = nil) throws -> LaunchPlan {
         guard let rawMainClass = detail.mainClass?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawMainClass.isEmpty else {
@@ -132,7 +133,13 @@ enum LaunchPlanBuilder {
         jvmArguments.append(contentsOf: authlibArguments)
 
         // 游戏参数优先用版本 JSON 自带的 arguments / minecraftArguments；都没有则回退到内置集。
-        let gameArguments = ArgumentResolver.gameArguments(version: detail, context: resolverContext)
+        var gameArguments = ArgumentResolver.gameArguments(version: detail, context: resolverContext)
+
+        // 联机：快速进服。Minecraft 主类认 `--server <host> --port <port>`，
+        // 追加在游戏参数末尾即可；PC 端「直接连接」与此等价。
+        if let server = server {
+            gameArguments.append(contentsOf: ["--server", server.host, "--port", "\(server.port)"])
+        }
 
         return LaunchPlan(
             version: version,

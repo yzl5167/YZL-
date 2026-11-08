@@ -70,6 +70,8 @@ final class AppState: ObservableObject {
 
     /// 主页「下载游戏」把用户送到版本页后，用这个 id 自动开始安装。
     @Published var pendingInstallVersionID: String?
+    /// 联机：快速进服时暂存的服务器；`buildReadiness` 生成启动计划后清空。
+    @Published var pendingServer: MinecraftServer?
 
     let downloads = DownloadManager()
     let installQueue = DownloadQueue()
@@ -571,6 +573,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 联机：直接连入指定服务器。复用当前选中版本，把服务器暂存后走正常启动自检流程。
+    /// 若尚未选中已安装版本，自检会给出明确阻塞提示。
+    func joinServer(_ server: MinecraftServer) {
+        pendingServer = server
+        requestLaunch()
+    }
+
     func closeLaunchSheet() {
         if launchPhase == .checking || launchPhase == .launching {
             launchTask?.cancel()
@@ -1042,7 +1051,8 @@ final class AppState: ObservableObject {
                     memoryMB: memory,
                     maxHeapMB: cap,
                     userType: userType,
-                    authlibArguments: authlibArguments
+                    authlibArguments: authlibArguments,
+                    server: pendingServer
                 )
             } catch {
                 checks.append(LaunchCheck(
@@ -1053,6 +1063,9 @@ final class AppState: ObservableObject {
                 ))
             }
         }
+
+        // 服务器已在启动计划里消费，清空暂存避免下次普通启动重复进服。
+        pendingServer = nil
 
         // 即使内核还没接上，也把已生成的命令行作为可见产物展示（令牌脱敏）。
         if let plan {

@@ -7,6 +7,8 @@ import SwiftUI
 /// 安装进度已统一交给全局 InstallOverlay，这里不再放横幅。
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showingServers = false
+    @State private var homeServers: [MinecraftServer] = []
 
     var body: some View {
         GeometryReader { proxy in
@@ -65,6 +67,12 @@ struct HomeView: View {
             }
             .frame(width: 300)
             .padding(.top, 10)
+
+            serverSection
+                .padding(.top, 14)
+        }
+        .sheet(isPresented: $showingServers) {
+            ServerListView()
         }
     }
 
@@ -155,6 +163,73 @@ struct HomeView: View {
                 .foregroundStyle(YZLTheme.muted)
                 .lineLimit(1)
         }
+    }
+
+    /// 联机：首页服务器收藏卡片（对齐 PC 端 MainWindow.Multiplayer 的服务器列表入口）。
+    private var serverSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                    .foregroundStyle(YZLTheme.accent)
+                Text("联机")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+                Spacer()
+                Button {
+                    showingServers = true
+                } label: {
+                    Text("管理")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(YZLTheme.accentText)
+                }
+            }
+            if homeServers.isEmpty {
+                Text("还没有收藏服务器，点「管理」添加。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(YZLTheme.muted)
+            } else {
+                ForEach(homeServers.prefix(3)) { server in
+                    HStack(spacing: 8) {
+                        Image(systemName: server.isFavorite ? "star.fill" : "server.rack")
+                            .foregroundStyle(server.isFavorite ? YZLTheme.warningText : YZLTheme.muted)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(server.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(YZLTheme.text)
+                            Text(server.connectAddress)
+                                .font(.system(size: 11))
+                                .foregroundStyle(YZLTheme.muted)
+                        }
+                        Spacer()
+                        Button {
+                            appState.joinServer(server)
+                        } label: {
+                            Text("加入")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(YZLTheme.accent)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: YZLTheme.cardCorner, style: .continuous)
+                .fill(YZLTheme.card)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: YZLTheme.cardCorner, style: .continuous)
+                .stroke(YZLTheme.border, lineWidth: 1)
+        )
+        .onAppear { homeServers = ServerListStore().load() }
     }
 
     private func ghostButton(_ title: String, action: @escaping () -> Void) -> some View {

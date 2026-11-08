@@ -408,7 +408,7 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
   - **修正（2026-11-07）**：旧 `YZL-engine-unsigned.ipa` 只是 `.tipa` 改名，伪签 + 私有 entitlement 导致 iOS 18 重签后装不上/打不开。已改为 `make-sideload-ipa.sh` 剥离全部 `LC_CODE_SIGNATURE` 与私有权限，产出 `YZL-engine-sideload-unsigned.ipa`，并由 `verify_engine_ipa.py` 硬校验（11/7 曾 CI 全绿，11/8 被回退，本轮补回）。
   - **修正（2026-11-08）**：真机装伪签包纯黑屏。注入补丁改为原生装配后接管、显式枚举 framework 路径、失败显示可见诊断条。JRE 仍是 8/17 完整、21/25 空壳，建议换 Amethyst 社区维护版。
   - **剩余（唯一真正阻断）**：真机装干净侧载包 → 看到 YZL 界面 → 装原版 1.20.1 → 开 JIT → 进游戏，全程留日志/录屏。
-- **M3（第一块已实现，进行中）** 已落地：皮肤站 Yggdrasil 三源 + authlib-injector 注入、整合包导入（mrpack/CF/YZL/MMC/PCL）、模组清单与开关、版本导出/删除、微软皮肤上传与披风管理、3D 皮肤预览、下载源健康检查、下载中心。**未完成**：Forge / NeoForge 加载器、三源聚合的联机能力、以上功能的真机验证，以及 GPLv3 对应源码义务（见 `THIRD-PARTY-NOTICES.md`）。
+- **M3（第一块已实现，进行中）** 已落地：皮肤站 Yggdrasil 三源 + authlib-injector 注入、整合包导入（mrpack/CF/YZL/MMC/PCL）、模组清单与开关、版本导出/删除、微软皮肤上传与披风管理、3D 皮肤预览、下载源健康检查、下载中心、**联机（服务器收藏列表 + 快速进服，对齐 PC 端 MainWindow.Multiplayer）**。**未完成**：Forge / NeoForge 加载器、三源聚合的联机能力、以上功能的真机验证，以及 GPLv3 对应源码义务（见 `THIRD-PARTY-NOTICES.md`）。
 
 ## 合规
 
