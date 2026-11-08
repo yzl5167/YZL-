@@ -81,8 +81,13 @@ struct HomeView: View {
             appState.overlay = .account
         } label: {
             ZStack(alignment: .bottomTrailing) {
-                // 微软账号没皮肤时按 PC 端规则借用同名皮肤站账号的材质。
-                PclAvatarView(size: 140, account: appState.displayAccountWithSkinFallback)
+                // 微软账号没皮肤时按 PC 端规则借用同名皮肤站账号的材质；
+                // 离线账号的默认皮肤按创建时选的模型（Steve / Alex）。
+                PclAvatarView(
+                    size: 140,
+                    account: appState.displayAccountWithSkinFallback,
+                    defaultModel: appState.activeOfflineAccount?.skinModel ?? "steve"
+                )
                 Image(systemName: "pencil.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(YZLTheme.accent)

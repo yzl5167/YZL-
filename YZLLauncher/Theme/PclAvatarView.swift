@@ -122,6 +122,8 @@ enum PclAvatarRenderer {
 struct PclAvatarView: View {
     let size: CGFloat
     let account: MicrosoftAccount?
+    /// 无自定义皮肤时的默认皮肤模型："steve" / "alex"。
+    var defaultModel: String = "steve"
 
     @State private var rendered: UIImage?
 
@@ -138,15 +140,16 @@ struct PclAvatarView: View {
             }
     }
 
-    /// 无皮肤时的占位：用程序化默认皮肤直接渲一遍 PCL 头像。
+    /// 无皮肤时的占位：内置真 Steve / Alex 默认皮肤渲一遍 PCL 头像。
     private var placeholder: UIImage {
-        if let cached = Self.placeholderImage { return cached }
-        let generated = PclAvatarRenderer.render(skin: Skin3DModel.defaultSkin()) ?? UIImage()
-        Self.placeholderImage = generated
+        let key = defaultModel
+        if let cached = Self.placeholderCache[key] { return cached }
+        let generated = PclAvatarRenderer.render(skin: Skin3DModel.defaultSkin(model: key)) ?? UIImage()
+        Self.placeholderCache[key] = generated
         return generated
     }
 
-    private static var placeholderImage: UIImage?
+    private static var placeholderCache: [String: UIImage] = [:]
 
     @MainActor
     private func reload() async {
@@ -160,6 +163,7 @@ struct PclAvatarView: View {
             texture = await SkinTexture.load(from: url)
         }
         guard let texture else { return }
-        rendered = PclAvatarRenderer.render(skin: texture) ?? PclAvatarRenderer.render(skin: Skin3DModel.defaultSkin())
+        rendered = PclAvatarRenderer.render(skin: texture)
+            ?? PclAvatarRenderer.render(skin: Skin3DModel.defaultSkin(model: defaultModel))
     }
 }

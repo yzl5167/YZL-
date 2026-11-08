@@ -289,7 +289,7 @@ struct AccountView: View {
     private func offlineRow(_ off: OfflineAccount) -> some View {
         let isActive = appState.activeAccountID == off.id
         return HStack(spacing: 12) {
-            AvatarView(size: 42, account: off.asMicrosoftAccount)
+            AvatarView(size: 42, account: off.asMicrosoftAccount, defaultModel: off.skinModel)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(off.name)

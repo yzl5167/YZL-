@@ -431,9 +431,32 @@ final class Skin3DModel {
 
     // MARK: - 默认皮肤
 
-    /// 没有任何皮肤来源时（未登录 / 无 URL）的程序化 Steve 风格皮肤。
-    /// Android 端有内置 default_steve.png，iOS 工程里没有这张资源，就按同款配色现画一张。
-    static func defaultSkin() -> UIImage {
+    /// 内置真 Steve / Alex 皮肤（从官方客户端 jar 提取，与 Android 端
+    /// default_steve.png / default_alex.png 资产同源），资源缺失时回退程序化皮肤。
+    static func defaultSkin(model: String = "steve") -> UIImage {
+        if let embedded = embeddedDefaultSkin(model: model) {
+            return embedded
+        }
+        return programmaticFallbackSkin()
+    }
+
+    /// Bundle 感知加载：独立 App 资源在主 bundle，M2-b fork 外壳编译进
+    /// YZLUI.framework、资源在 framework bundle（与 YZLTheme.icon 同一套路）。
+    static func embeddedDefaultSkin(model: String) -> UIImage? {
+        let name = model == "alex" ? "default_alex" : "default_steve"
+        if let image = UIImage(named: name, in: Bundle(for: BundleToken.self), compatibleWith: nil) {
+            return image
+        }
+        if let image = UIImage(named: name, in: .main, compatibleWith: nil) {
+            return image
+        }
+        return nil
+    }
+
+    private final class BundleToken {}
+
+    /// 资源缺失时的应急程序化皮肤（正常情况不会走到这里）。
+    private static func programmaticFallbackSkin() -> UIImage {
         let size = CGSize(width: 64, height: 64)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1

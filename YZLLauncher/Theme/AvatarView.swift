@@ -58,60 +58,17 @@ enum SkinTexture {
     }
 }
 
-/// 用户真实 Minecraft 皮肤头像，登录后可显示；未登录时用干净的占位头像。
+/// 用户真实 Minecraft 皮肤头像：与主页大头像同一条 PCL 渲染链
+/// （脸层 + 帽层 + 灰描边），保证侧栏 / 账号页 / 设置页与主页完全一致。
+/// 未登录或无皮肤时显示内置真 Steve 默认皮肤。
 struct AvatarView: View {
     let size: CGFloat
     let account: MicrosoftAccount?
-
-    @State private var texture: UIImage?
-
-    private var skinURL: String? { account?.skinURL }
+    /// 无自定义皮肤时的默认皮肤模型："steve" / "alex"。
+    var defaultModel: String = "steve"
 
     var body: some View {
-        Group {
-            if let texture,
-               let head = SkinTexture.head(from: texture, targetSize: size * 3) {
-                Image(uiImage: head)
-                    .resizable()
-                    .interpolation(.none)
-                    .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: size * 0.16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
-                            .stroke(YZLTheme.border, lineWidth: 1)
-                    )
-            } else {
-                placeholder
-            }
-        }
-        .task(id: skinURL) {
-            await reloadTexture()
-        }
-    }
-
-    /// 账号或皮肤地址变化时重新取图；先清空旧图，避免切换账号时闪现上一个账号的皮肤。
-    /// `yzl-local-skin://` 引用一律只读本地文件，绝不对自定义 scheme 发网络请求。
-    @MainActor
-    private func reloadTexture() async {
-        texture = nil
-        guard let raw = skinURL, let url = URL(string: raw) else { return }
-        if url.scheme?.lowercased() == LocalSkinStore.scheme {
-            texture = LocalSkinStore().load(from: url)
-            return
-        }
-        texture = await SkinTexture.load(from: url)
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            Circle()
-                .fill(YZLTheme.accentSoft)
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: size * 0.42, weight: .light))
-                .foregroundStyle(YZLTheme.accent.opacity(0.6))
-        }
-        .frame(width: size, height: size)
-        .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
+        PclAvatarView(size: size, account: account, defaultModel: defaultModel)
     }
 }
 
