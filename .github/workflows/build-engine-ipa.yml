@@ -242,14 +242,11 @@ jobs:
           # YZLUI 是 Swift 框架，需要 Swift 运行时库。Amethyst 主 App 是 ObjC 的
           # 不会自带——用 swift-stdlib-tool 把依赖的 dylib 拷到 Frameworks。
           # 没有这步 dlopen 会因找不到 libswiftCore.dylib 而失败 → 回退 PJL 原生 UI。
-          echo "Copying Swift runtime libraries..."
-          xcrun swift-stdlib-tool --copy --destination "$APP/Frameworks" \
-            "$APP/Frameworks/YZLUI.framework/YZLUI"
-          echo "Swift runtime libs:"
-          ls -la "$APP/Frameworks/" | grep -c "libswift" || echo "  (none found)"
-          for f in "$APP/Frameworks/"libswift*.dylib; do
-            [ -f "$f" ] && ldid -S "$f"
-          done
+          # 修 rpath：让 YZLUI.framework 和主二进制都能找到 Frameworks 里的依赖
+          install_name_tool -add_rpath "@executable_path/Frameworks" \
+            "$APP/Frameworks/YZLUI.framework/YZLUI" 2>/dev/null || true
+          install_name_tool -add_rpath "@executable_path/Frameworks" \
+            "$APP/AngelAuraAmethyst" 2>/dev/null || true
 
           echo "YZLUI.framework 已注入 $APP/Frameworks"
           ls -la "$APP/Frameworks/YZLUI.framework"
