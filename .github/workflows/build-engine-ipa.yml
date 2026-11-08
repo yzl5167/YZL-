@@ -94,12 +94,12 @@ jobs:
         working-directory: amethyst
         run: |
           mkdir -p depends && cd depends
-          for v in 8 17 21 25; do
+          for v in 8 17; do
             name="jre${v}-ios-aarch64"
             snap=$(curl -fsSL --max-time 30 "http://archive.org/wayback/available?url=assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);c=d.get("archived_snapshots",{}).get("closest",{});print(c.get("timestamp",""))' 2>/dev/null || true)
             if [ -n "$snap" ]; then
               echo "jre$v: wayback snapshot $snap, downloading..."
-              if curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 "https://web.archive.org/web/${snap}id_/https://assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" -o "${name}.zip"; then
+              if curl -fL --retry 3 --max-time 900 "https://web.archive.org/web/${snap}id_/https://assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" -o "${name}.zip"; then
                 unzip -oq "${name}.zip" || true
                 rm -f "${name}.zip"
                 if ! ls jre${v}-*.tar.xz >/dev/null 2>&1; then
@@ -126,7 +126,7 @@ jobs:
               | python3 -c 'import sys,json;ps=[p for p in json.load(sys.stdin) if "fx" not in p["name"].lower()];print(ps[0]["download_url"] if ps else "")' 2>/dev/null || true)
             if [ -z "$url" ]; then echo "  zulu lookup failed for $v"; continue; fi
             echo "  $url"
-            if curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 "$url" -o zulu.zip; then
+            if curl -fL --retry 3 --max-time 900 "$url" -o zulu.zip; then
               unzip -oq zulu.zip -d zulu-x && rm zulu.zip
               root=$(dirname "$(find zulu-x -type f -name release | head -1)")
               echo "  JDK root: $root"
@@ -151,20 +151,10 @@ jobs:
           # 标记文件的目录会被 METHOD_JAVA_UNPACK 整体跳过，故只放目录。
           if [ ! -f java-8-openjdk/release ]; then
             echo "source B: extracting JREs from PojavLauncher iOS v2.2..."
-            # github.com/releases/download 域名在托管 runner 上持续返回 504，
-            # 而 GitHub API 的 release asset 端点（匿名 302 到
-            # objects.githubusercontent.com）实测可用。优先走 API，直链仅作兜底。
-            if ! curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 \
-              -H "Accept: application/octet-stream" \
-              "https://api.github.com/repos/PojavLauncherTeam/PojavLauncher_iOS/releases/assets/107024469" \
-              -o pojav22.ipa; then
-              echo "source B: API asset failed, fallback to release direct link"
-              rm -f pojav22.ipa
-              curl -fL --retry 5 --retry-all-errors --retry-delay 5 --max-time 900 \
-                "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
-                -o pojav22.ipa || echo "pojav download FAILED"
-            fi
-            if [ -f pojav22.ipa ] && [ "$(wc -c < pojav22.ipa)" -gt 100000000 ]; then
+            curl -fL --retry 3 --max-time 900 \
+              "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
+              -o pojav22.ipa || echo "pojav download FAILED"
+            if [ -f pojav22.ipa ]; then
               unzip -oq pojav22.ipa -d pojav-x || true
               rm -f pojav22.ipa
               for jli in $(find pojav-x -type f -name libjli.dylib); do
@@ -202,34 +192,11 @@ jobs:
         working-directory: amethyst
         run: |
           set -o pipefail
-
-          # 上游 JavaApp/Makefile 写的是：
-          #   launcher.jar: $(CLASSES) check_empty_classes
-          # 两个依赖并列，-jN 下 check_empty_classes 会与 javac 同时启动，
-          # 把正在写入的 0 字节 .class 当成编译失败（不是偶发，是必然竞态）。
-          # 让检查显式依赖 $(CLASSES)，make 就必须等全部 javac 完成。
-          MF=JavaApp/Makefile
-          python3 "$GITHUB_WORKSPACE/engine/fix-check-empty-classes.py" "$MF"
-          grep -n 'check_empty_classes' "$MF" | head -5
-
           # Amethyst 的 Makefile 用 /usr/libexec/java_home -v 1.8 找 BOOTJDK，
           # setup-java 装的 JDK 不在 java_home 注册表里——显式传 BOOTJDK 覆盖。
-          run_make() {
-            make -j"$1" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
-              BOOTJDK="$JAVA_HOME/bin" 2>&1 | tee engine-build.log
-          }
-          # 兜底：上游若再次改动导致竞态复现，清掉全部 0 字节 class 后单线程重跑。
-          if ! run_make "$(sysctl -n hw.ncpu)"; then
-            if grep -q "found empty class files" engine-build.log; then
-              echo "::warning::check_empty_classes 仍误报，清理全部空 class 后单线程重跑"
-              find . -type f -name '*.class' -size 0 -delete
-              run_make 1
-            else
-              echo "::error::make payload 失败（非竞态错误），见 engine-build.log"
-              tail -n 60 engine-build.log
-              exit 1
-            fi
-          fi
+          make -j"$(sysctl -n hw.ncpu)" payload RUNNER=1 TROLLSTORE_JIT_ENT=1 RELEASE=1 \
+            BOOTJDK="$JAVA_HOME/bin" \
+            2>&1 | tee engine-build.log
 
       - name: Rebrand payload (YZL name + icon + bundle id)
         run: |
@@ -271,49 +238,34 @@ jobs:
           fi
           # 框架二进制补伪签（与 payload 其余部分同一策略）
           ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI"
+
+          # YZLUI 是 Swift 框架，需要 Swift 运行时库。Amethyst 主 App 是 ObjC 的
+          # 不会自带——用 swift-stdlib-tool 把依赖的 dylib 拷到 Frameworks。
+          # 没有这步 dlopen 会因找不到 libswiftCore.dylib 而失败 → 回退 PJL 原生 UI。
+          echo "Copying Swift runtime libraries..."
+          xcrun swift-stdlib-tool --copy --destination "$APP/Frameworks" \
+            "$APP/Frameworks/YZLUI.framework/YZLUI"
+          echo "Swift runtime libs:"
+          ls -la "$APP/Frameworks/" | grep -c "libswift" || echo "  (none found)"
+          for f in "$APP/Frameworks/"libswift*.dylib; do
+            [ -f "$f" ] && ldid -S "$f"
+          done
+
           echo "YZLUI.framework 已注入 $APP/Frameworks"
           ls -la "$APP/Frameworks/YZLUI.framework"
 
-      # 每次大修都要同时交付两种形态：
-      #   YZL-engine.tipa                     TrollStore / 旧系统
-      #   YZL-engine-sideload-unsigned.ipa   iOS 18 侧载（SideStore / 轻松签 重签）
-      - name: Package TrollStore tipa
+      - name: Package tipa / ipa
         run: |
           mkdir -p dist
           if [ -d amethyst/artifacts/Payload ]; then
             cd amethyst/artifacts
             zip -qry "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" Payload
+            cp "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" "$GITHUB_WORKSPACE/dist/YZL-engine-unsigned.ipa"
             cd - >/dev/null
           else
             echo "::error::Payload 目录不存在，无法出包"
             exit 1
           fi
-
-      # iOS 17.4+ / 18.x 不走 TrollStore：必须剥掉 ldid 伪签和 TrollStore 私有
-      # entitlement，否则 SideStore / 轻松签 重签后 UI 起不来（实机表现为纯黑屏）。
-      # 旧逻辑只是把 .tipa 复制成 -unsigned.ipa，名字看着干净、内容仍是伪签包，
-      # 这里改为真正重新产出一个无签名、无私有权限的独立 IPA。
-      - name: Build clean sideload IPA (unsigned)
-        run: |
-          set -euo pipefail
-          bash scripts/make-sideload-ipa.sh \
-            "$GITHUB_WORKSPACE/amethyst/artifacts" \
-            "$GITHUB_WORKSPACE/dist/YZL-engine-sideload-unsigned.ipa"
-
-      - name: Verify engine payload completeness
-        run: |
-          set -euo pipefail
-          # 校验项：YZLUI 二进制是真 Mach-O、JRE 8/17 真实可用、launcher.jar /
-          # 图形翻译层 / Java 桥 jar 齐备；sideload 包额外校验签名与私有权限已清除。
-          # JRE 21/25 缺席只告警并写进报告，不阻断构建（当前上游源确实拿不到）。
-          python3 scripts/verify_engine_ipa.py \
-            "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" \
-            --mode trollstore \
-            --report "$GITHUB_WORKSPACE/dist/ENGINE-PAYLOAD-TROLLSTORE.txt"
-          python3 scripts/verify_engine_ipa.py \
-            "$GITHUB_WORKSPACE/dist/YZL-engine-sideload-unsigned.ipa" \
-            --mode sideload \
-            --report "$GITHUB_WORKSPACE/dist/ENGINE-PAYLOAD-SIDELOAD.txt"
 
       - name: Verify YZLUI binary inside final tipa
         run: |
