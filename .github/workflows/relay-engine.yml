@@ -14,7 +14,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
   relay:
@@ -32,27 +32,32 @@ jobs:
           TIPA=$(find art -name '*.tipa' | head -1)
           test -n "$TIPA"
           echo "TIPA=$TIPA" >> "$GITHUB_ENV"
-          IPA=$(find art -name '*.ipa' | head -1)
-          test -n "$IPA"
-          echo "IPA=$IPA" >> "$GITHUB_ENV"
+          # 2026-11-09：仓库默认 workflow 权限已改 write，这里直接建 engine-latest
+          # Release（此前 GITHUB_TOKEN 只读导致 403、Release 造不出来）。
+          gh release delete engine-latest --cleanup-tag \
+            --repo "${{ github.repository }}" -y 2>/dev/null || true
+          gh release create engine-latest "$TIPA" \
+            --repo "${{ github.repository }}" \
+            --title "YZL 引擎最新构建（engine-latest）" \
+            --notes "未签名 tipa：TrollStore 直接安装；代签必须重签所有文件（含 Frameworks 内动态库），否则 YZL UI 无法加载"
 
-      - name: Upload to public mirrors
+      - name: Upload TIPA to filebin (备用直链)
+        env:
+          TIPA: ${{ env.TIPA }}
         run: |
           set -uo pipefail
-          ls -la "$TIPA" "$IPA"
-          echo '--- gofile tipa ---'
-          curl -sS --max-time 900 -F "file=@$TIPA" https://store1.gofile.io/uploadFile | tee gofile.json || true
-          echo '--- gofile ipa ---'
-          curl -sS --max-time 900 -F "file=@$IPA" https://store1.gofile.io/uploadFile | tee gofile_ipa.json || true
-          echo '--- pixeldrain ipa ---'
-          curl -sS --max-time 900 -T "$IPA" https://pixeldrain.com/api/file/ | tee pixel_ipa.json || true
+          BIN="yzl-$(date +%s)"
+          echo "FILEBIN_BIN=$BIN" >> "$GITHUB_ENV"
+          echo "bin=$BIN"
+          curl -sS --max-time 900 -T "$TIPA" \
+            "https://filebin.net/$BIN/YZL-engine.tipa" -o filebin.json
+          cat filebin.json || true
 
-      - name: Print links
+      - name: Print links and sizes
         if: always()
+        env:
+          TIPA: ${{ env.TIPA }}
         run: |
+          ls -la "$TIPA" 2>/dev/null || true
           echo "FILEBIN_BIN=${FILEBIN_BIN:-}"
-          for f in pixel.json filebin.json uguu.txt litter.txt gofile.json gofile_ipa.json pixel_ipa.json; do
-            echo "===== $f ====="
-            cat "$f" 2>/dev/null || true
-            echo
-          done
+          cat filebin.json 2>/dev/null || true
