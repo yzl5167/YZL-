@@ -199,8 +199,8 @@ injection = '''    // ---- YZL UI injection (M2-b patch 3, with runtime diagnost
                 [alert addAction:[UIAlertAction actionWithTitle:@"知道了"
                                                           style:UIAlertActionStyleDefault
                                                         handler:nil]];
-                UIViewController *base = self.window ?: UIWindow.mainWindow;
-                [base.rootViewController presentViewController:alert animated:YES completion:nil];
+                [self.window.rootViewController
+                    presentViewController:alert animated:YES completion:nil];
             });
     }
 '''
