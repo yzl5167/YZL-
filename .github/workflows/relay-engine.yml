@@ -39,7 +39,7 @@ jobs:
           # Release（此前 GITHUB_TOKEN 只读导致 403、Release 造不出来）。
           gh release delete engine-latest --cleanup-tag \
             --repo "${{ github.repository }}" -y 2>/dev/null || true
-          gh release create engine-latest "$TIPA" \
+          gh release create engine-latest "$TIPA" "$IPA" \
             --repo "${{ github.repository }}" \
             --title "YZL 引擎最新构建（engine-latest）" \
             --notes "未签名 tipa：TrollStore 直接安装；代签必须重签所有文件（含 Frameworks 内动态库），否则 YZL UI 无法加载"
