@@ -9,6 +9,13 @@ name: Engine baseline (M2-b experiment)
 # 设计与执行手册见 docs/M2B-ENGINE.md。
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "YZLUI/**"
+      - "engine/**"
+      - "project.yml"
+      - ".github/workflows/build-engine-ipa.yml"
   workflow_dispatch:
     inputs:
       amethyst_ref:
@@ -331,8 +338,13 @@ jobs:
         run: |
           gh release delete engine-latest --cleanup-tag \
             --repo "$GITHUB_REPOSITORY" -y 2>/dev/null || true
-          gh release create engine-latest "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" \
+          # 交付标准（2026-11-09 起）：tipa 与 unsigned ipa 是同一份含内核
+          # （Amethyst fork 引擎 + java_runtimes + YZLUI）的包，两份同时出。
+          # 纯 UI 外壳（com.yzl.launcher）只是开发预览，不再作为交付物。
+          gh release create engine-latest \
+            "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" \
+            "$GITHUB_WORKSPACE/dist/YZL-engine-unsigned.ipa" \
             --repo "$GITHUB_REPOSITORY" \
             --title "YZL 引擎最新构建（engine-latest）" \
-            --notes "commit ${{ github.sha }} · 未签名 tipa：TrollStore 可直接安装；代签必须选择「重签所有文件（含 Frameworks 内动态库）」，否则 YZL UI 无法加载" \
+            --notes "commit ${{ github.sha }} · 未签名：TrollStore 可直接安装；代签必须选择「重签所有文件（含 Frameworks 内动态库）」，否则 YZL UI 无法加载。tipa 与 ipa 内容一致（Payload/ + 内核 + YZLUI），仅扩展名不同。" \
             && echo "Release ready: https://github.com/$GITHUB_REPOSITORY/releases/tag/engine-latest"
