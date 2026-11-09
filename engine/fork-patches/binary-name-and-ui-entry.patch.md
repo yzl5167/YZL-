@@ -41,6 +41,20 @@ if (handle) {
 // dlopen 失败或类缺失 → 继续走原 Amethyst UI（fallback，引擎构建永不被 UI 卡死）
 ```
 
+补充（2026-11-07 修复）：失败路径不再静默——
+
+- 会向用户弹一个一次性告警（`YZL UI 未加载（当前显示原生界面）`），文案直接
+  指出最常见原因：**代签时只签了主程序，没有重签 Frameworks/ 里的动态库**。
+- 同时把 `dlerror()` 原因写进应用的 `Documents/YZL-UI.log`（helper
+  `yzlWriteInjectLog` 由 `apply-fork-patches.sh` 一并注入）。
+- `NSClassFromString` 现在兼容两种注册名：裸 `YZLUIRootController`（源码
+  `@objc(YZLUIRootController)` 注解）与 `YZLUI.YZLUIRootController` 掩码。
+
+签名时序之后同样重要：任何会改二进制字节的操作（`install_name_tool`、重命名
+Info.plist 字段等）都必须发生在 ldid 打伪签**之前**，否则最终包里的签名
+过期，真机 dlopen 直接失败——这正是「TrollStore 装没问题、代签后回退原生
+UI」的根因。CI 现已在打包前对所有 Mach-O 统一收尾补签。
+
 配套要求（Makefile payload 阶段）：
 
 ```make

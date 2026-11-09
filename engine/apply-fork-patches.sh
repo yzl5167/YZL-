@@ -111,12 +111,8 @@ fi
 
 # ---- YZL fork 补丁③：SceneDelegate 根视图让位给 YZL UI ----
 # Amethyst 的根装配在 SceneDelegate.m 的 launchInitialViewController(self.window)。
-# 2026-11-08 实机反馈「打开一直纯黑」后加固：
-#   1) 注入放在原生装配【之后】，确保 self.window 已存在，不再给 nil window 设根视图；
-#   2) dlopen 不再猜 privateFrameworksPath，显式枚举 Frameworks/ 与 PrivateFrameworks/；
-#   3) 加载失败不再静默回退（原生界面在无 JIT 时就是纯黑），改为叠加可见诊断条，
-#      并 NSLog 打印 dlerror，方便下一轮真机定位。
-# 未命中（无框架）仍继续走原生 UI，永不卡死构建。
+# 在其之前尝试 dlopen YZLUI.framework：命中 YZLUIRootController 就接管根视图，
+# 未命中（无框架）继续走原生 UI，永不卡死。
 SD="$AMETHYST_DIR/Natives/SceneDelegate.m"
 if [ -f "$SD" ]; then
   if grep -q "YZLUIRootController" "$SD"; then
@@ -138,58 +134,80 @@ if "#include <dlfcn.h>" not in src and "#import <dlfcn.h>" not in src:
     if import_needle in src:
         src = src.replace(import_needle, import_needle + '\n#include <dlfcn.h>', 1)
 
-injection = '''    // ---- YZL UI injection (M2-b patch 3, hardened 2026-11-08) ----
+# 注入失败日志 helper（文件作用域：写 Documents/YZL-UI.log，真机可直接读）
+if "yzlWriteInjectLog" not in src:
+    helper = '''static void yzlWriteInjectLog(NSString *event, NSString *frameworkPath, NSString *detail) {
+    NSString *stamp = [NSDateFormatter localizedStringFromDate:[NSDate date]
+                                                    dateStyle:NSDateFormatterNoStyle
+                                                    timeStyle:NSDateFormatterMediumStyle];
+    NSString *line = [NSString stringWithFormat:@"[%@] %@ | YZLUI.framework: %@",
+        stamp, event, frameworkPath ?: @"(路径为空)"];
+    if (detail.length > 0) {
+        line = [line stringByAppendingFormat:@" | 原因: %@", detail];
+    }
+    line = [line stringByAppendingString:@"\\n"];
+    NSString *documents = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    NSFileManager *fm = NSFileManager.defaultManager;
+    if (![fm fileExistsAtPath:documents]) {
+        [fm createDirectoryAtPath:documents withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    NSString *logPath = [documents stringByAppendingPathComponent:@"YZL-UI.log"];
+    NSString *previous = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:nil];
+    NSString *content = previous.length > 0 ? [previous stringByAppendingString:line] : line;
+    [content writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+'''
+    if "@implementation" not in src:
+        sys.exit("@implementation 未找到，需人工核对")
+    src = src.replace("@implementation", helper + "@implementation", 1)
+
+injection = '''    // ---- YZL UI injection (M2-b patch 3, with runtime diagnostics) ----
     {
-        NSBundle *yzlBundle = [NSBundle mainBundle];
-        NSArray<NSString *> *yzlCandidates = @[
-            [[yzlBundle bundlePath] stringByAppendingPathComponent:@"Frameworks/YZLUI.framework/YZLUI"],
-            [[yzlBundle privateFrameworksPath] stringByAppendingPathComponent:@"YZLUI.framework/YZLUI"],
-            [[yzlBundle bundlePath] stringByAppendingPathComponent:@"PrivateFrameworks/YZLUI.framework/YZLUI"]
-        ];
-        void *yzlHandle = NULL;
-        NSString *yzlUsedPath = nil;
-        NSString *yzlLastError = nil;
-        for (NSString *yzlPath in yzlCandidates) {
-            if (![[NSFileManager defaultManager] fileExistsAtPath:yzlPath]) continue;
-            dlerror();
-            yzlHandle = dlopen(yzlPath.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
-            if (yzlHandle) { yzlUsedPath = yzlPath; break; }
-            const char *yzlErr = dlerror();
-            yzlLastError = yzlErr ? [NSString stringWithUTF8String:yzlErr] : @"unknown dlopen error";
-            NSLog(@"[YZL] dlopen failed %@: %@", yzlPath, yzlLastError);
+        NSString *yzlFrameworkPath = [NSBundle.mainBundle.privateFrameworksPath
+            stringByAppendingPathComponent:@"YZLUI.framework/YZLUI"];
+        void *yzlHandle = dlopen(yzlFrameworkPath.fileSystemRepresentation, RTLD_LAZY);
+        Class yzlRootClass = yzlHandle
+            ? (NSClassFromString(@"YZLUIRootController")
+               ?: NSClassFromString(@"YZLUI.YZLUIRootController"))
+            : nil;
+        if (yzlRootClass) {
+            UIViewController *yzlRoot = [yzlRootClass new];
+            self.window.rootViewController = yzlRoot;
+            yzlWriteInjectLog(@"YZL UI 已接管根视图", yzlFrameworkPath, nil);
+            NSLog(@"[YZL] YZLUI.framework loaded, YZL UI takes over");
+            return;
         }
-        Class yzlRootClass = yzlHandle ? NSClassFromString(@"YZLUIRootController") : nil;
-        UIWindow *yzlWindow = self.window;
-        if (!yzlWindow) {
-            for (UIWindow *yzlW in [UIApplication sharedApplication].windows) {
-                if (yzlW.isKeyWindow) { yzlWindow = yzlW; break; }
-            }
-        }
-        if (yzlRootClass && yzlWindow) {
-            yzlWindow.rootViewController = [yzlRootClass new];
-            [yzlWindow makeKeyAndVisible];
-            NSLog(@"[YZL] YZLUI loaded from %@, YZL UI takes over", yzlUsedPath);
-        } else {
-            NSString *yzlMsg = yzlLastError ?: @"YZLUI.framework 不存在或 YZLUIRootController 未注册";
-            if (yzlWindow) {
-                UILabel *yzlLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, yzlWindow.bounds.size.width, 96)];
-                yzlLabel.text = [NSString stringWithFormat:@"YZL UI 加载失败\\n%@\\n请截图反馈", yzlMsg];
-                yzlLabel.numberOfLines = 0;
-                yzlLabel.textAlignment = NSTextAlignmentCenter;
-                yzlLabel.font = [UIFont systemFontOfSize:12];
-                yzlLabel.textColor = [UIColor whiteColor];
-                yzlLabel.backgroundColor = [UIColor colorWithRed:0.78 green:0.12 blue:0.12 alpha:0.92];
-                [yzlWindow addSubview:yzlLabel];
-            }
-            NSLog(@"[YZL] YZLUI load failed: %@ (candidates=%@, window=%@)", yzlMsg, yzlCandidates, yzlWindow);
-        }
+
+        // 注入失败不再静默：设备上直接弹窗说明原因，并写 Documents/YZL-UI.log。
+        // 最常见原因：代签时只签了主程序、没有重签 Frameworks/ 里的动态库，
+        // dlopen 因签名无效失败——之前这种失败完全无感，用户只会看到原生 UI。
+        NSString *detail = yzlHandle
+            ? @"framework 已加载，但缺少 YZLUIRootController 类"
+            : @(dlerror() ?: "dlopen 失败（原因未知）");
+        NSLog(@"[YZL] YZLUI.framework not usable: %@", detail);
+        yzlWriteInjectLog(@"YZL UI 注入失败，回退原生 UI", yzlFrameworkPath, detail);
+        NSString *message = [NSString stringWithFormat:
+            @"原因：%@\\n\\n最常见：重签名只签了主程序，没有重签 Frameworks/ 里的动态库。请让签名方选择「重签所有文件」，或用 TrollStore 直接安装不重签的引擎包。\\n详细原因已写入应用的 Documents/YZL-UI.log", detail];
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                UIAlertController *alert = [UIAlertController
+                    alertControllerWithTitle:@"YZL UI 未加载（当前显示原生界面）"
+                                     message:message
+                              preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"知道了"
+                                                          style:UIAlertActionStyleDefault
+                                                        handler:nil]];
+                UIViewController *base = self.window ?: UIWindow.mainWindow;
+                [base.rootViewController presentViewController:alert animated:YES completion:nil];
+            });
     }
 '''
-# 放在原生装配之后：此时 self.window 必然已创建，避免给 nil window 设根视图导致纯黑屏。
-src = src.replace(call_needle, call_needle + "\n" + injection, 1)
+src = src.replace(call_needle, injection + call_needle, 1)
 with open(path, "w", encoding="utf-8") as f:
     f.write(src)
-print("[patch] SceneDelegate.m: YZL UI 注入点已插入")
+print("[patch] SceneDelegate.m: YZL UI 注入点已插入（含失败弹窗 + YZL-UI.log）")
 PY
   fi
 else

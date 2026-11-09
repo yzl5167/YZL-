@@ -236,20 +236,43 @@ jobs:
             find "$APP/Frameworks/YZLUI.framework" -maxdepth 2 -print || true
             exit 1
           fi
-          # 框架二进制补伪签（与 payload 其余部分同一策略）
-          ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI"
-
-          # YZLUI 是 Swift 框架，需要 Swift 运行时库。Amethyst 主 App 是 ObjC 的
-          # 不会自带——用 swift-stdlib-tool 把依赖的 dylib 拷到 Frameworks。
-          # 没有这步 dlopen 会因找不到 libswiftCore.dylib 而失败 → 回退 PJL 原生 UI。
-          # 修 rpath：让 YZLUI.framework 和主二进制都能找到 Frameworks 里的依赖
+          # 签名必须对着最终字节算：先改 Load Commands，再统一打伪签。
+          # 之前「先 ldid -S 再 install_name_tool」会让框架带着过期签名出货——
+          # TrollStore 不校验签名所以装不上也看不出问题，但真机代签时 dlopen
+          # 因签名无效静默失败，引擎直接回退 Amethyst 原生 UI（用户看到的
+          # 「签完毫无 YZL 界面、和 PJL 一样」就是这么来的）。
           install_name_tool -add_rpath "@executable_path/Frameworks" \
             "$APP/Frameworks/YZLUI.framework/YZLUI" 2>/dev/null || true
           install_name_tool -add_rpath "@executable_path/Frameworks" \
             "$APP/AngelAuraAmethyst" 2>/dev/null || true
+          # YZLUI 是 Swift 框架：iOS ≥12.2 系统自带 Swift 运行时，正常无需嵌
+          # swift dylib；rpath 指向 @executable_path/Frameworks 兜住产物内依赖。
+          ldid -S "$APP/Frameworks/YZLUI.framework/YZLUI"
 
           echo "YZLUI.framework 已注入 $APP/Frameworks"
           ls -la "$APP/Frameworks/YZLUI.framework"
+
+      # 收尾统一伪签：这一步必须晚于一切会改二进制字节的操作
+      # （Rebrand 改 Info.plist / install_name_tool 改 load commands）。
+      # 签名时间点一旦落后，就会复现「过期签名 → dlopen 静默失败 → 原生 UI」。
+      - name: Final ad-hoc re-sign (all Mach-O)
+        run: |
+          set -euo pipefail
+          APP=$(find amethyst/artifacts -type d -name "AngelAuraAmethyst.app" | head -1)
+          if [ -z "$APP" ]; then echo "::error::未找到 app，无法收尾签名"; exit 1; fi
+          ENT="$GITHUB_WORKSPACE/amethyst/entitlements.trollstore.xml"
+          ldid -S"$ENT" "$APP/AngelAuraAmethyst"
+          for dylib in "$APP"/Frameworks/*.dylib; do
+            [ -f "$dylib" ] && ldid -S "$dylib"
+          done
+          FW="$APP/Frameworks/YZLUI.framework/YZLUI"
+          for bin in "$APP/AngelAuraAmethyst" "$FW"; do
+            if ! otool -l "$bin" | grep -q LC_CODE_SIGNATURE; then
+              echo "::error::$(basename "$bin") 缺少代码签名段"
+              exit 1
+            fi
+          done
+          echo "final resign OK: 主二进制 + YZLUI + 顶级 dylib 已统一补签"
 
       - name: Package tipa / ipa
         run: |
@@ -298,3 +321,18 @@ jobs:
           name: engine-build-${{ inputs.amethyst_ref || 'main' }}
           path: dist/
           if-no-files-found: warn
+
+      # 手机浏览器直接下载用：artifact 需要登录且下载慢，Release 任何人可下。
+      # 每次构建覆盖 engine-latest 标签，永远是最新引擎包。
+      - name: Refresh engine-latest GitHub Release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete engine-latest --cleanup-tag \
+            --repo "$GITHUB_REPOSITORY" -y 2>/dev/null || true
+          gh release create engine-latest "$GITHUB_WORKSPACE/dist/YZL-engine.tipa" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "YZL 引擎最新构建（engine-latest）" \
+            --notes "commit ${{ github.sha }} · 未签名 tipa：TrollStore 可直接安装；代签必须选择「重签所有文件（含 Frameworks 内动态库）」，否则 YZL UI 无法加载" \
+            && echo "Release ready: https://github.com/$GITHUB_REPOSITORY/releases/tag/engine-latest"
