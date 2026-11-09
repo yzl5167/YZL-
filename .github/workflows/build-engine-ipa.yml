@@ -263,7 +263,7 @@ jobs:
           ENT="$GITHUB_WORKSPACE/amethyst/entitlements.trollstore.xml"
           ldid -S"$ENT" "$APP/AngelAuraAmethyst"
           for dylib in "$APP"/Frameworks/*.dylib; do
-            [ -f "$dylib" ] && ldid -S "$dylib"
+            if [ -f "$dylib" ]; then ldid -S "$dylib"; fi
           done
           FW="$APP/Frameworks/YZLUI.framework/YZLUI"
           for bin in "$APP/AngelAuraAmethyst" "$FW"; do
