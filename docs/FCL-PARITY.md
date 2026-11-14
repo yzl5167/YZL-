@@ -26,6 +26,7 @@ FCL（Fold Craft Launcher）是**安卓**平台的 Minecraft Java 版启动器�
 | 皮肤 | 本地导入 / 皮肤站 / 官方 | 离线本地导入（相册 + 尺寸校验）/ Mojang 档案读取 / **微软皮肤上传 + 披风管理** / **皮肤站 sessionserver 同步 + 上传/重置** / 3D 预览 | ✅ 已实现 |
 | 账号 | 离线 / 微软正版 / 皮肤站 | 微软浏览器授权码流 + Keychain / 离线 UUID / **皮肤站 Yggdrasil（LittleSkin 等自定义 API Root）+ authlib-injector 游戏内注入** | ✅ 已实现（三源聚合） |
 | 联机 | 游戏内服务器列表 / 直连 | 启动器侧**服务器收藏列表 + 快速进服**（往启动参数注入 `--server <host> --port <port>`，对齐 PC 端 `MainWindow.Multiplayer`）；游戏内联机/好友/局域网由 LWJGL 网络栈完成 | ✅ 已实现 |
+| 版本设置 | 每版本内存 / JVM 参数 / 窗口 / Java 锁 | **每版本独立设置页**：内存滑块（可跟随全局）、额外 JVM 参数、窗口宽高、全屏、Java 大版本锁定，落盘 `Documents/YZLVersionSettings/settings.json`，启动自检与引擎均读取（对齐 PC 端「版本设置」） | ✅ 已实现 |
 | 分发 | 直接装 APK | **IPA 必须签名**；主线出 `.tipa` 给 TrollStore | ❌ 平台差异 |
 | JIT | Android 默认允许 | iOS 沙箱默认禁止，需 TrollStore 或调试器附加 | ❌ 平台差异 |
 | 有效期 | 永久 | TrollStore 永久；免费 Apple ID 仅 7 天 | ❌ 平台差异 |

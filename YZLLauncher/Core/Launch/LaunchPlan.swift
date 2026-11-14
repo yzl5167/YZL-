@@ -13,6 +13,9 @@ struct LaunchPlan {
     let gameArguments: [String]
     let accountName: String
     let uuid: String
+    /// 该版本被用户锁定的 Java 大版本（nil = 自动按版本推荐）。
+    /// 启动链路据此挑 JRE 并写入契约的 javaMajor；与 PC 端「版本设置 → Java 版本」一致。
+    let lockedJavaMajor: Int?
 
     /// 可以展示给用户的摘要，刻意不包含令牌和完整命令行。
     var summary: String {
@@ -73,7 +76,8 @@ enum LaunchPlanBuilder {
                       maxHeapMB: Int = 4096,
                       userType: String = "msa",
                       authlibArguments: [String] = [],
-                      server: MinecraftServer? = nil) throws -> LaunchPlan {
+                      server: MinecraftServer? = nil,
+                      versionSettings: PerVersionSettings? = nil) throws -> LaunchPlan {
         guard let rawMainClass = detail.mainClass?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !rawMainClass.isEmpty else {
@@ -90,8 +94,10 @@ enum LaunchPlanBuilder {
         let javaMajor = detail.javaVersion?.majorVersion ?? 8
         // 通用包：堆上限由设备运行时可用内存给出，默认 4096 MB 保持旧行为与单测稳定。
         // 低内存设备（老 iPhone）不会因为在设置里拖到 4096 就被 jetsam 杀掉。
+        // 版本设置页可单独覆盖本版本内存（nil 时用全局 memoryMB）。
         let ceiling = max(512, maxHeapMB)
-        let heap = max(512, min(memoryMB, ceiling))
+        let effectiveMemory = versionSettings?.memoryMB ?? memoryMB
+        let heap = max(512, min(effectiveMemory, ceiling))
 
         var resolverContext = ArgumentResolver.Context(
             accountName: account.name,
@@ -107,8 +113,8 @@ enum LaunchPlanBuilder {
             launcherVersion: DeviceInfo.appVersion,
             classpath: classpathString,
             assetsIndexName: detail.assetIndexName,
-            width: nil,
-            height: nil
+            width: versionSettings?.windowWidth,
+            height: versionSettings?.windowHeight
         )
         // 离线（伪正版）账号走 mojang，正版走 msa；合成初始化器不收此标签参数，故构造后赋值。
         resolverContext.userType = userType
@@ -131,6 +137,10 @@ enum LaunchPlanBuilder {
         // 皮肤站账号：authlib-injector 的 -javaagent / -Dauthlibinjector.side（见 AuthlibInjector）。
         // -javaagent 放在 -cp 之前符合 JVM 语义；fork 引擎路径由 YZLEngineHost 显式转发。
         jvmArguments.append(contentsOf: authlibArguments)
+        // 版本设置页「额外 JVM 参数」：用户自由文本，引擎只转发安全子集（见 EngineJVMArguments.sanitized）。
+        if let extra = versionSettings?.customJVMArgumentList, !extra.isEmpty {
+            jvmArguments.append(contentsOf: extra)
+        }
 
         // 游戏参数优先用版本 JSON 自带的 arguments / minecraftArguments；都没有则回退到内置集。
         var gameArguments = ArgumentResolver.gameArguments(version: detail, context: resolverContext)
@@ -139,6 +149,10 @@ enum LaunchPlanBuilder {
         // 追加在游戏参数末尾即可；PC 端「直接连接」与此等价。
         if let server = server {
             gameArguments.append(contentsOf: ["--server", server.host, "--port", "\(server.port)"])
+        }
+        // 版本设置页「全屏启动」：Minecraft 主类认 `--fullscreen` 游戏参数。
+        if versionSettings?.fullscreen == true {
+            gameArguments.append("--fullscreen")
         }
 
         return LaunchPlan(
@@ -152,7 +166,8 @@ enum LaunchPlanBuilder {
             jvmArguments: jvmArguments,
             gameArguments: gameArguments,
             accountName: account.name,
-            uuid: account.id
+            uuid: account.id,
+            lockedJavaMajor: versionSettings?.lockedJavaMajor
         )
     }
 }

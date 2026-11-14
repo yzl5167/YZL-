@@ -89,10 +89,12 @@ struct YZLEngineHost: LauncherEngine {
         // 旧实现用 RuntimeLocator.javaHome() 拿「第一个有效目录」，
         // 1.16（要 Java 8）可能被塞 Java 17、1.21（要 Java 21）可能被塞 8，
         // 这正是 PC 端「按版本自动选 Java」要解决的问题。
-        let requiredMajor = JavaEnvironment.recommendedMajor(
-            gameVersion: plan.version.id,
-            declaredMajor: plan.detail.javaVersion?.majorVersion
-        )
+        // 版本设置页锁定的 Java 大版本优先于自动推荐。
+        let requiredMajor = plan.lockedJavaMajor
+            ?? JavaEnvironment.recommendedMajor(
+                gameVersion: plan.version.id,
+                declaredMajor: plan.detail.javaVersion?.majorVersion
+            )
         guard let javaHome = javaHomeProvider(requiredMajor) else {
             throw EngineError.launchFailed(
                 JavaEnvironment.missingHint(
@@ -158,19 +160,19 @@ struct YZLEngineHost: LauncherEngine {
         let launch = unsafeBitCast(launchSymbol, to: LaunchJVM.self)
         let username = plan.accountName
         // jvm_processed 是 Amethyst 唯一开放给我们追加 JVM 参数的入口（拼在它自己的
-        // -Xmx 之后，最后一条生效）。只放堆与 GC，不转发实例里那份 Windows natives 路径。
-        let jvmArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
-        // 皮肤站账号的 authlib-injector 参数要进 fork 引擎：从 LaunchPlan 的 jvmArguments
-        // 里显式挑出注入相关的两条（EngineJVMArguments 黑名单不含 -javaagent，
-        // 这里按前缀过滤转发，其余参数照旧不转发）。
-        let authlibArguments = plan.jvmArguments.filter(AuthlibInjector.isInjectorArgument)
+        // -Xmx 之后，最后一条生效）。堆与 GC 由 EngineJVMArguments 生成；
+        // 版本设置页「额外 JVM 参数」+ 皮肤站 authlib 参数经 sanitize 去掉路径类后一并转发
+        // （sanitize 会丢弃 -Djava.library.path / -cp / -jar，避免把 Windows natives 指给 iOS）。
+        let baseArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
+        let forwardedArguments = EngineJVMArguments.sanitized(from: plan.jvmArguments)
+        let jvmArguments = baseArguments + forwardedArguments
 
         let exitCode: Int32 = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let nsName = username as NSString
                 let target: NSDictionary = [
                     "id": plan.version.id,
-                    "arguments": ["jvm_processed": jvmArguments + authlibArguments]
+                    "arguments": ["jvm_processed": jvmArguments]
                 ]
                 let code = launch(
                     Unmanaged.passUnretained(nsName).toOpaque(),

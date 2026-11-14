@@ -88,3 +88,23 @@ YZLUI.framework (SwiftUI)
    `LauncherSplitViewController` 的实例化点）。
 3. `jvm_processed` 里是否需要追加 `-Xmx`（YZL 契约 memoryMB）——
    默认沿用 fork 偏好值，不追加。
+
+## 2026-11-14 更新：补丁 3 的最终形态
+
+上面的 `dlopen` 草图已被 `engine/apply-fork-patches.sh` 里的实现取代，差异集中在
+「注入失败怎么被发现」和「注入成功怎么不被覆盖」两件事：
+
+| 环节 | 早期草图 | 现在（11/14 合并版） |
+| --- | --- | --- |
+| 注入位置 | 装配 split VC 之前 | `launchInitialViewController(self.window)` **之后**（保证 window 非 nil），并显式 `makeKeyAndVisible` |
+| 路径 | `privateFrameworksPath` 猜一个 | 依次枚举 `PrivateFrameworks` → `Frameworks` → bundle 根，逐个记「存在 / dlopen / dlerror」 |
+| 装载 | `RTLD_LAZY` | 先 `RTLD_NOW`（缺符号能立刻拿到准确错误），失败退 `RTLD_LAZY` 并把两条错误都写日志 |
+| 类查找 | `NSClassFromString(@"YZLUIRootController")` | 兼容裸名与 `YZLUI.YZLUIRootController` 两种注册名 |
+| 失败 | 静默回退原生 UI | 弹窗说明原因 + 写 `Documents/YZL-UI.log`（真机可直接取，不需要 Mac） |
+| 被覆盖 | 无处理 | 接管后 +0.6s / +2.0s 两次补枪，上游异步装配若换了 rootViewController 就夺回来 |
+| 成功证据 | 只有 NSLog | `YZLUIRootController` 在 `viewDidLoad` / `viewDidAppear` 各写一行 `Documents/YZL-boot.log` |
+
+签名前提（最容易踩的坑）：**`ldid` 必须晚于一切改二进制字节的操作**。
+打包流程里 `install_name_tool -add_rpath` 改过 load commands 之后必须重签，
+否则真机 `dlopen` 会因「签名无效」静默失败，表现就是「签完毫无 YZL 界面」。
+工作流里对应 `Final ad-hoc re-sign (all Mach-O)` 这一步。

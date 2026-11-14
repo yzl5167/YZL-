@@ -913,7 +913,10 @@ final class AppState: ObservableObject {
         }
 
         // 对齐 PC 端：不只看「有没有 JRE」，还要看是不是当前游戏版本需要的那个 Java。
-        let requiredJava = JavaEnvironment.recommendedMajor(gameVersion: selectedVersion?.id)
+        // 版本设置页锁定的 Java 大版本优先于自动推荐。
+        let perVersionSettings = selectedVersion.map { VersionSettingsStore().settings(for: $0.id) }
+        let requiredJava = perVersionSettings?.lockedJavaMajor
+            ?? JavaEnvironment.recommendedMajor(gameVersion: selectedVersion?.id)
         switch JavaEnvironment.selection(for: requiredJava) {
         case .exact(let runtime):
             checks.append(LaunchCheck(
@@ -1011,7 +1014,8 @@ final class AppState: ObservableObject {
         let cap = DeviceCapabilities.maxSafeHeapMB
         let preferredMemory = Int(UserDefaults.standard.double(forKey: "memoryMB"))
         let preferred = preferredMemory > 0 ? preferredMemory : DeviceCapabilities.recommendedHeapMB
-        let memory = min(preferred, cap)
+        // 版本设置页可单独覆盖本版本内存；没设则用全局首选。
+        let memory = min(perVersionSettings?.memoryMB ?? preferred, cap)
         let recommended = DeviceCapabilities.recommendedHeapMB
         let overRecommended = memory > recommended + 512
         // 手机上「能启动」和「能进世界」是两道关：整合包越大，后者越吃堆。
@@ -1052,7 +1056,8 @@ final class AppState: ObservableObject {
                     maxHeapMB: cap,
                     userType: userType,
                     authlibArguments: authlibArguments,
-                    server: pendingServer
+                    server: pendingServer,
+                    versionSettings: perVersionSettings
                 )
             } catch {
                 checks.append(LaunchCheck(

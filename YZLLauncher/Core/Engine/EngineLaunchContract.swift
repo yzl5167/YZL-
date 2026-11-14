@@ -67,10 +67,11 @@ enum EngineLaunchContract {
             versionType: plan.version.type,
             gameDirectory: plan.gameDirectory.path,
             assetsDirectory: plan.layout.assetsDirectory.path,
-            javaMajor: JavaEnvironment.recommendedMajor(
-                gameVersion: plan.version.id,
-                declaredMajor: plan.detail.javaVersion?.majorVersion
-            ),
+            javaMajor: plan.lockedJavaMajor
+                ?? JavaEnvironment.recommendedMajor(
+                    gameVersion: plan.version.id,
+                    declaredMajor: plan.detail.javaVersion?.majorVersion
+                ),
             memoryMB: plan.memoryMB
         )
     }

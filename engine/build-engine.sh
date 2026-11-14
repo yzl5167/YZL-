@@ -94,11 +94,16 @@ DIST="$REPO_ROOT/dist-engine"
 mkdir -p "$DIST"
 if [ -d "$WORK/amethyst/artifacts/Payload" ]; then
   ( cd "$WORK/amethyst/artifacts" && zip -qry "$DIST/YZL-engine.tipa" Payload )
-  cp "$DIST/YZL-engine.tipa" "$DIST/YZL-engine-unsigned.ipa"
+  # iOS 18 侧载包必须真正剥签重出，不能把 tipa 复制改名：
+  # tipa 带 ldid 伪签 + TrollStore 私有 entitlement，重签后 UI 起不来。
+  bash "$REPO_ROOT/scripts/make-sideload-ipa.sh" \
+    "$WORK/amethyst/artifacts" \
+    "$DIST/YZL-engine-sideload-unsigned.ipa"
   if ! unzip -l "$DIST/YZL-engine.tipa" | grep -q 'Frameworks/YZLUI.framework/YZLUI$'; then
     echo "[engine] ERROR: 最终 tipa 缺少 YZLUI.framework/YZLUI" >&2
     exit 1
   fi
+  rm -f "$DIST/YZL-engine-unsigned.ipa"
 else
   echo "[engine] ERROR: Payload 目录不存在，只有日志可取" >&2
   exit 1

@@ -190,7 +190,8 @@ final class EnginePayloadTests: XCTestCase {
             jvmArguments: ["-Xmx1024M"],
             gameArguments: gameArguments ?? ["--username", "Steve", "--accessToken", "secret-token"],
             accountName: "Steve",
-            uuid: "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+            uuid: "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+            lockedJavaMajor: nil
         )
     }
 }

@@ -9,7 +9,7 @@
 
 **交付约定（2026-11-08 起）**：每次大修结束，CI 必须**同时产出两个引擎包**并一起交付 —— `YZL-engine.tipa`（TrollStore / 旧系统）与 `YZL-engine-sideload-unsigned.ipa`（iOS 18 侧载，干净未签名）。**不存在也不允许**把 `.tipa` 复制改名当 `.ipa` 的产物：那是伪签 + TrollStore 私有权限，iOS 18 重签后 UI 起不来。详见 [`docs/IOS18-SIDELOAD.md`](docs/IOS18-SIDELOAD.md)。
 
-当前处于 **M0/M1/M2 完成 + M3 第一块已实现 + 真机联调未通过**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、启动参数组装、皮肤站（Yggdrasil 三源）、整合包导入、3D 皮肤预览、模组管理、版本导出都已实现并有单测。引擎包含 JRE **8/17 完整**（21/25 为上游 CDN 失效后的空壳，暂不能玩 1.21+）、图形 dylib、Java 桥 jar、`YZLGameEntry` 与 `YZLUI.framework` 二进制。
+当前处于 **M0/M1/M2 完成 + M3 第一块已实现 + 真机联调未通过**。界面、Mojang 版本清单、微软登录、分片下载、整包安装、启动参数组装、皮肤站（Yggdrasil 三源）、整合包导入、3D 皮肤预览、模组管理、版本导出、联机（服务器收藏 + 快速进服）、**版本设置页（每版本内存/JVM/窗口/全屏/Java 锁）**都已实现并有单测。引擎包含 JRE **8/17 完整**（21/25 为上游 CDN 失效后的空壳，暂不能玩 1.21+）、图形 dylib、Java 桥 jar、`YZLGameEntry` 与 `YZLUI.framework` 二进制。
 
 **真机联调实况（2026-11-08）**：iOS 18 装上 11/8 CI 的 `YZL-engine-unsigned.ipa`（`.tipa` 改名产物）后**打开一直纯黑**，M2-b 验收未通过。已定位并修复两类根因：① 该包是伪签 + 私有 entitlement，重签后动态库加载失败；② `SceneDelegate` 注入补丁用 `privateFrameworksPath` 猜路径、还在原生 window 装配前给可能为空的 window 设根视图，且加载失败时静默回退（原生界面在无 JIT 时就是黑屏）。现在改为显式枚举路径、装配后接管、失败时显示可见诊断条。**仍需要一次真机复验**，未验证前不宣称能进游戏。
 
@@ -278,6 +278,22 @@ Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（An
 - **关于页**：新增「特别感谢」卡（PCL / FCL / Amethyst / CmlLib.Core / BMCLAPI / Modrinth / CurseForge / LittleSkin / Mojang 徽标行，配色对齐 Android 端）。
 - **引擎流水线**：`build-engine-ipa.yml` 补声明 `zulu_jre` input（此前被引用但未声明，实验源 C 开不了）；UI 改造推送后触发 Engine baseline——流水线每次 dispatch 都现场检出 main 重编 YZLUI.framework，完整 `YZL-engine.tipa` 自动带上全部新 UI + 登录修复。
 - **测试**：`MirrorPolicyTests` 更新三档断言 + 候选序；新增 `PclAvatarTests`（输出尺寸/描边色/帽层覆盖/64×32 无帽层/归一化——顺带抓出并修掉 toRGBA 正方形上下文破坏 64×32 皮肤的真 bug）；新增 `DownloadCacheTests`（清理只动缓存、pendingBytes 统计、幂等）。
+### 2026-11-14：巨魔 / 第三方重签后「毫无 UI」的定位与修复
+
+真机反馈：`.tipa` 用 TrollStore 装、或包被别的证书重签后，打开只看得到黑屏（或上游界面），观感与 PojavLauncher 一模一样。
+
+- **先排除包结构**（全部对产物实测，不是推测）：`YZLUI.framework/YZLUI` 7.0 MB 确实在 `Frameworks/` 内，`MH_DYLIB` 类型、`LC_ID_DYLIB=@rpath/YZLUI.framework/YZLUI`、`LC_RPATH` 含 `@executable_path/Frameworks`；依赖只有 WebKit/SwiftUI/CryptoKit/PhotosUI 这些 iOS 15 就有的系统库；主二进制里 `NSClassFromString("YZLUIRootController")`、`YZLUI.framework/YZLUI`、`launchJVM` 三个特征串都在，说明 fork 补丁③确实打进了产物。**所以不是「UI 没打包进去」，是运行时没加载起来。**
+- **根因链**：YZL 的界面根本不在主 App 里。主 App 是上游 Amethyst（PojavLauncher 系），根视图由 `Natives/SceneDelegate.m` `dlopen` YZLUI.framework 后用 `YZLUIRootController` 接管；**装载失败就回落上游原生界面，而上游界面在没有 JIT 的真机上本来就是纯黑**。于是现象等价于「毫无 UI」，且不接电脑拿不到任何错误信息。
+- **11/09 已定位的一半（本轮保留）**：打包时在 `ldid` 伪签**之后**又用 `install_name_tool` 改 load commands，签名过期，真机 `dlopen` 静默失败。现在工作流有一步 `Final ad-hoc re-sign (all Mach-O)`，**签名晚于一切字节修改**，并校验主二进制与 YZLUI 都有 `LC_CODE_SIGNATURE`。
+- **11/09 那条线同时回退掉的一半（本轮补回）**：它把「真·无签名 sideload 包」改成了 `cp tipa → YZL-engine-unsigned.ipa`。这正是 11/07–11/08 已经定性过的错误产物（伪签 + TrollStore 私有 entitlement，iOS 18 重签后装不上或打开纯黑），也和本仓库 `docs/IOS18-SIDELOAD.md` 的说明自相矛盾。本轮恢复 `scripts/make-sideload-ipa.sh` 真剥签 + `verify_engine_ipa.py` 双包硬校验，并同步 relay 工作流与本地 `build-engine.sh` 的文件名/做法。
+- **注入补丁合并**（`engine/apply-fork-patches.sh` 补丁③）：
+  1. 注入点放回 `launchInitialViewController` **之后**（11/08 真机曾因给 nil window 设根视图而纯黑），并显式 `makeKeyAndVisible`；
+  2. 候选路径逐个枚举（`PrivateFrameworks` → `Frameworks` → 根目录），记录「是否存在 / dlopen 结果 / dlerror」；`RTLD_NOW` 失败再退 `RTLD_LAZY` 重试，两种错误都留档；
+  3. 成功后 **+0.6s / +2.0s 两次补枪**：上游若还有异步装配替换 `rootViewController`，把根视图夺回来并记录；
+  4. 失败弹窗说明原因（不再是静默回退），并写 `Documents/YZL-UI.log`；
+  5. `YZLUIRootController` 在 `viewDidLoad` / `viewDidAppear` 各写一行 `Documents/YZL-boot.log`（`Core/System/YZLBootLog.swift`），用来区分「框架没装载」「装载了但白屏」「被别处换掉」三种完全不同的病因。
+- **怎么反馈**：仍黑屏时，打开「文件」App → 我的 iPhone → YZL，把 `YZL-UI.log` 与 `YZL-boot.log` 一起发回来即可定位（有 `YZL-boot.log` 就说明框架加载成功了）。
+- **顺带交付**：版本设置页（每版本内存 / JVM 参数 / 窗口宽高 / 全屏 / Java 锁定 + 启动自检与引擎双读）。
 
 ## 目录结构
 
@@ -408,7 +424,7 @@ IPA = Xcode 编译出的 `YZLLauncher.app` 放进 `Payload/` 再打成 zip 改�
   - **修正（2026-11-07）**：旧 `YZL-engine-unsigned.ipa` 只是 `.tipa` 改名，伪签 + 私有 entitlement 导致 iOS 18 重签后装不上/打不开。已改为 `make-sideload-ipa.sh` 剥离全部 `LC_CODE_SIGNATURE` 与私有权限，产出 `YZL-engine-sideload-unsigned.ipa`，并由 `verify_engine_ipa.py` 硬校验（11/7 曾 CI 全绿，11/8 被回退，本轮补回）。
   - **修正（2026-11-08）**：真机装伪签包纯黑屏。注入补丁改为原生装配后接管、显式枚举 framework 路径、失败显示可见诊断条。JRE 仍是 8/17 完整、21/25 空壳，建议换 Amethyst 社区维护版。
   - **剩余（唯一真正阻断）**：真机装干净侧载包 → 看到 YZL 界面 → 装原版 1.20.1 → 开 JIT → 进游戏，全程留日志/录屏。
-- **M3（第一块已实现，进行中）** 已落地：皮肤站 Yggdrasil 三源 + authlib-injector 注入、整合包导入（mrpack/CF/YZL/MMC/PCL）、模组清单与开关、版本导出/删除、微软皮肤上传与披风管理、3D 皮肤预览、下载源健康检查、下载中心、**联机（服务器收藏列表 + 快速进服，对齐 PC 端 MainWindow.Multiplayer）**。**未完成**：Forge / NeoForge 加载器、三源聚合的联机能力、以上功能的真机验证，以及 GPLv3 对应源码义务（见 `THIRD-PARTY-NOTICES.md`）。
+- **M3（第一块已实现，进行中）** 已落地：皮肤站 Yggdrasil 三源 + authlib-injector 注入、整合包导入（mrpack/CF/YZL/MMC/PCL）、模组清单与开关、版本导出/删除、微软皮肤上传与披风管理、3D 皮肤预览、下载源健康检查、下载中心、**联机（服务器收藏列表 + 快速进服，对齐 PC 端 MainWindow.Multiplayer）**、**版本设置页（每版本内存/JVM 参数/窗口宽高/全屏/Java 版本锁定，对齐 PC 端「版本设置」，落盘 `Documents/YZLVersionSettings/settings.json`）**。**未完成**：Forge / NeoForge 加载器、三源聚合的联机能力、以上功能的真机验证，以及 GPLv3 对应源码义务（见 `THIRD-PARTY-NOTICES.md`）。
 
 ## 合规
 

@@ -20,6 +20,11 @@ public final class YZLUIRootController: UIViewController {
         super.viewDidLoad()
         Self.configureBars()
 
+        // 真机定位用：走到这一行说明「框架已 dlopen 成功 + ObjC 类已注册」。
+        // 如果用户只看到黑屏而日志停在上游的注入行、没有这行，就是没装载进来；
+        // 有这行黑屏则是 SwiftUI 宿主本身的问题，两种方向完全不同。
+        YZLBootLog.write("YZLUIRootController.viewDidLoad: 宿主=\(Bundle.main.bundleURL.lastPathComponent) 系统=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+
         let root = RootView()
             .environmentObject(appState)
             .preferredColorScheme(.light)
@@ -30,6 +35,14 @@ public final class YZLUIRootController: UIViewController {
         view.addSubview(hosting.view)
         hosting.didMove(toParent: self)
         hostingController = hosting
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 真的画到屏幕上了才写这行；有它 + 仍然黑屏 = 渲染层问题，
+        // 没它 + 有 viewDidLoad = 根视图被别处换掉了（上游异步装配覆盖）。
+        let size = view.bounds.size
+        YZLBootLog.write("YZLUIRootController.viewDidAppear: 窗口=\(view.window == nil ? "nil" : "ok") 尺寸=\(Int(size.width))x\(Int(size.height))")
     }
 
     public override func viewDidLayoutSubviews() {

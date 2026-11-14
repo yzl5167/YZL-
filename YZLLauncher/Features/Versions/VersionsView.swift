@@ -224,6 +224,7 @@ private struct VersionDetailPane: View {
     @ObservedObject private var installQueue: DownloadQueue
     @Binding var pendingInstallID: String?
     @StateObject private var model: VersionDetailViewModel
+    @State private var showVersionSettings = false
 
     init(version: MinecraftVersion,
          downloads: DownloadManager,
@@ -290,6 +291,10 @@ private struct VersionDetailPane: View {
         }
         .onChange(of: pendingInstallID) { _ in
             autoInstallIfRequested()
+        }
+        .sheet(isPresented: $showVersionSettings) {
+            VersionSettingsView(version: version)
+                .environmentObject(appState)
         }
     }
 
@@ -371,6 +376,19 @@ private struct VersionDetailPane: View {
                 .buttonStyle(.plain)
                 .fixedSize()
             }
+
+            Button {
+                showVersionSettings = true
+            } label: {
+                Text("版本设置")
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(YZLTheme.accentText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(YZLTheme.accentSoft))
+            .buttonStyle(.plain)
+            .fixedSize()
         }
     }
 

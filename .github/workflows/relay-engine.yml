@@ -57,7 +57,7 @@ jobs:
           curl -sS --max-time 1200 -X POST --data-binary "@${TIPA}" \
             "https://filebin.net/${BIN}/YZL-engine.tipa" -o fb_tipa.json || echo "tipa upload failed"
           curl -sS --max-time 1200 -X POST --data-binary "@${IPA}" \
-            "https://filebin.net/${BIN}/YZL-engine-unsigned.ipa" -o fb_ipa.json || echo "ipa upload failed"
+            "https://filebin.net/${BIN}/YZL-engine-sideload-unsigned.ipa" -o fb_ipa.json || echo "ipa upload failed"
           cat fb_tipa.json 2>/dev/null || true
           cat fb_ipa.json 2>/dev/null || true
 
@@ -70,6 +70,6 @@ jobs:
           ls -la "$TIPA" "$IPA" 2>/dev/null || true
           echo "FILEBIN_BIN=${FILEBIN_BIN:-}"
           echo "filebin tipa: https://filebin.net/${FILEBIN_BIN}/YZL-engine.tipa"
-          echo "filebin ipa : https://filebin.net/${FILEBIN_BIN}/YZL-engine-unsigned.ipa"
+          echo "filebin ipa : https://filebin.net/${FILEBIN_BIN}/YZL-engine-sideload-unsigned.ipa"
           cat fb_tipa.json 2>/dev/null || true
           cat fb_ipa.json 2>/dev/null || true
