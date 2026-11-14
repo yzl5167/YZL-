@@ -103,7 +103,7 @@ final class VersionSettingsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
         let store = VersionSettingsStore(fileURL: url)
 
-        store.update(PerVersionSettings(versionID: "1.21", lockedJavaMajor: 21, fullscreen: true))
+        store.update(PerVersionSettings(versionID: "1.21", fullscreen: true, lockedJavaMajor: 21))
         XCTAssertEqual(store.all().count, 1)
 
         store.reset("1.21")
