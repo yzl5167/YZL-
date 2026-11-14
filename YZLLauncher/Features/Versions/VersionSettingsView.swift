@@ -16,6 +16,9 @@ struct VersionSettingsView: View {
     @State private var useGlobalMemory: Bool
     /// 窗口宽高：是否覆盖默认。
     @State private var overrideWindow: Bool
+    /// 本机已有的 Java 大版本。在 init 里算一次：`availableMajors()` 要扫目录，
+    /// 放进 body 会在每次输入 JVM 参数时都扫一遍文件系统。
+    private let availableMajors: [Int]
 
     init(version: MinecraftVersion) {
         self.version = version
@@ -23,6 +26,7 @@ struct VersionSettingsView: View {
         _settings = State(initialValue: loaded)
         _useGlobalMemory = State(initialValue: loaded.memoryMB == nil)
         _overrideWindow = State(initialValue: loaded.windowWidth != nil || loaded.windowHeight != nil)
+        self.availableMajors = JavaEnvironment.availableMajors()
     }
 
     /// 版本默认推荐的 Java 大版本，给用户一个参照。
@@ -278,10 +282,7 @@ struct VersionSettingsView: View {
                 .pickerStyle(.menu)
                 .tint(YZLTheme.accent)
 
-                let available = JavaEnvironment.availableMajors()
-                if settings.lockedJavaMajor != nil,
-                   let locked = settings.lockedJavaMajor,
-                   !available.contains(locked) {
+                if let locked = settings.lockedJavaMajor, !availableMajors.contains(locked) {
                     Text("当前没有 Java \(locked) 运行时。需要它的版本启动会失败，请安装含该 JRE 的引擎包，或把 iOS 版 JRE 放到 Documents/YZLJavaRuntimes/java-\(locked)-openjdk/。")
                         .font(.system(size: 10))
                         .foregroundStyle(YZLTheme.warningText)
