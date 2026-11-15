@@ -1,0 +1,97 @@
+name: StosVPN build (loopback VPN for StikDebug)
+
+# 背景：StikDebug 要连 10.7.0.1（本机回环），必须有 loopback VPN。
+# App Store 上的 LocalDevVPN 只在部分区上架，国内账号拿不到。
+# StosVPN 是 SideStore 团队的同一机制开源实现（MIT），但官方只出源码不出 IPA。
+# 这个 job 用托管 macOS runner 编一份「假签名」包，用户用自己的证书重签后安装。
+# 产物：StosVPN-unsigned.ipa（含 PlugIns/TunnelProv.appex）
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-stosvpn:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - name: Checkout StosVPN (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: SideStore/StosVPN
+          ref: 010bc141e6c2303b218924686f830e3249c66842
+          path: stosvpn
+
+      - name: Select newest Xcode
+        run: |
+          set -euo pipefail
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Install ldid
+        run: brew install ldid
+
+      - name: Build archive (no signing)
+        working-directory: stosvpn
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project StosVPN.xcodeproj \
+            -scheme StosVPN \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/StosVPN.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+          ls -la build/StosVPN.xcarchive/Products/Applications/
+
+      - name: Assemble Payload and fake-sign
+        working-directory: stosvpn
+        run: |
+          set -euo pipefail
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R build/StosVPN.xcarchive/Products/Applications/StosVPN.app Payload/StosVPN.app
+          APPEX=$(find Payload/StosVPN.app/PlugIns -maxdepth 1 -name "*.appex" | head -n 1)
+          if [ -z "$APPEX" ]; then echo "::error::TunnelProv.appex 缺失"; exit 1; fi
+          echo "appex: $APPEX"
+          ldid -S"$PWD/TunnelProv/TunnelProv.entitlements" "$APPEX/$(basename "$APPEX" .appex)"
+          ldid -S"$PWD/StosVPN/StosVPN.entitlements" Payload/StosVPN.app/StosVPN
+          echo "--- 主 App 权限 ---"
+          ldid -e Payload/StosVPN.app/StosVPN
+          echo "--- 扩展权限 ---"
+          ldid -e "$APPEX/$(basename "$APPEX" .appex)"
+          echo "--- bundle id ---"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" Payload/StosVPN.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APPEX/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSExtension:NSExtensionPointIdentifier" "$APPEX/Info.plist"
+          zip -qry "$GITHUB_WORKSPACE/StosVPN-unsigned.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/StosVPN-unsigned.ipa"
+
+      - name: Sanity check IPA
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile
+          z = zipfile.ZipFile("StosVPN-unsigned.ipa")
+          names = z.namelist()
+          need = [
+              "Payload/StosVPN.app/StosVPN",
+              "Payload/StosVPN.app/Info.plist",
+              "Payload/StosVPN.app/PlugIns/TunnelProv.appex/TunnelProv",
+              "Payload/StosVPN.app/PlugIns/TunnelProv.appex/Info.plist",
+          ]
+          for n in need:
+              assert n in names, "missing " + n
+          print("entries:", len(names))
+          print("OK")
+          PY
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: StosVPN-unsigned
+          path: StosVPN-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
