@@ -52,6 +52,17 @@ final class AppState: ObservableObject {
     /// 当前用于显示与启动的账号 id（正版或离线）。nil 表示未选择任何账号。
     @Published var activeAccountID: String?
     @Published var jitStatus: JITStatus = .unknown
+    /// 「一键开性能模式」进行中：已跳去助手、正在等它把调试器附上。
+    /// 界面上尽量不出现 JIT 这个词，别把技术门槛直接甩给用户。
+    @Published var isEnablingJIT = false
+    /// 自动续跑只做一次，防止「失败 → 重试 → 再失败」打成死循环。
+    private var jitAutoResumeArmed = false
+    /// 已经跳去助手、还没收到成功结果。和 `isEnablingJIT` 分开：
+    /// 轮询超时会把 `isEnablingJIT` 关掉，但用户在助手页里动作慢是常态，
+    /// 只要还没成功，回前台就应该继续补判定。
+    private var awaitingJITReturn = false
+    private var jitWaitTask: Task<Void, Never>?
+    private var jitForegroundObserver: NSObjectProtocol?
     @Published var javaStatus: JavaRuntimeStatus = .missing
     @Published var engineStatus: EngineStatus = .notInstalled
 
@@ -93,6 +104,19 @@ final class AppState: ObservableObject {
     private static let activeAccountKey = "yzl.activeAccount"
 
     init() {
+        // 开 JIT 是在「另一个 App」里完成的，我们无法监听它的结果，
+        // 只能等自己回到前台再查一次。放在所有 return 之前注册，
+        // 保证冷启动恢复会话、令牌刷新等分支也能收到。
+        jitForegroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleBecameActive()
+            }
+        }
+
         installedVersions = installedStore.load()
         if let data = UserDefaults.standard.data(forKey: Self.selectedVersionKey),
            let saved = try? JSONDecoder().decode(MinecraftVersion.self, from: data) {
@@ -591,16 +615,15 @@ final class AppState: ObservableObject {
         isLaunchSheetVisible = false
     }
 
-    /// 按本机部署档位自动选「最省电脑」的 JIT 开启方式：
-    /// 能用免电脑方法的系统版本一律用免电脑方法，只有不支持的才退回电脑方案。
+    /// 按钮文案统一用「性能模式」：JIT 只在下面那行小字里出现一次，
+    /// 否则第一次用的人根本不知道该点哪儿、也搜不到该装什么。
     var jitActionTitle: String {
         switch DeviceCapabilities.deploymentProfile {
-        case .permanentNoComputer, .oneTimeComputerThenPermanent:
-            return "通过 TrollStore 开启 JIT（免电脑）"
-        case .oneTimePairing, .appJITAdaptation:
-            return "查看手机端开启 JIT 的方法"
+        case .permanentNoComputer, .oneTimeComputerThenPermanent,
+             .oneTimePairing, .appJITAdaptation:
+            return "一键开启性能模式"
         case .computerAttached:
-            return "查看电脑附加 JIT 的方法"
+            return "查看电脑开启的方法"
         case .unsupportedOld:
             return "系统版本过低"
         }
@@ -608,32 +631,137 @@ final class AppState: ObservableObject {
 
     func enableJIT() {
         switch DeviceCapabilities.deploymentProfile {
-        case .permanentNoComputer, .oneTimeComputerThenPermanent:
-            openTrollStoreJIT()
-        case .oneTimePairing, .appJITAdaptation:
-            launchErrorMessage = "iOS 17.4+ 可在手机上开 JIT：先连上 LocalDevVPN 本地回环，再打开 StikDebug 选中 YZL Launcher 点 Enable JIT。配对文件只需电脑生成一次，之后不用电脑。注意每次重开 App 都要重新点一次。"
-            launchPhase = .failed("请按提示开启 JIT")
+        case .permanentNoComputer, .oneTimeComputerThenPermanent,
+             .oneTimePairing, .appJITAdaptation:
+            // TrollStore 与 StikDebug 走同一条路：候选列表按顺序试，
+            // 装了哪个就用哪个，用户不用先搞清楚自己是哪种部署方式。
+            startAutomaticJIT()
         case .computerAttached:
-            launchErrorMessage = "这个系统版本 StikDebug 不支持，需要电脑附加：AltServer → Enable JIT，或 SideJITServer / Jitterbug。续签同样需要电脑。"
-            launchPhase = .failed("需要电脑附加 JIT")
+            launchErrorMessage = "iOS 17.3 及以下手机端没有可用的助手，只能电脑附加：AltServer → Enable JIT，或 SideJITServer / Jitterbug。"
+            launchPhase = .failed("需要电脑开启性能模式")
         case .unsupportedOld:
             launchErrorMessage = "系统低于 iOS 15.0，本启动器无法运行。"
             launchPhase = .failed("系统版本过低")
         }
     }
 
-    private func openTrollStoreJIT() {
-        guard let bundleID = Bundle.main.bundleIdentifier,
-              let url = URL(string: "apple-magnifier://enable-jit?bundle-id=\(bundleID)") else {
+    /// 一键开性能模式：跳转 → 用户点一下 → 回来自动继续。
+    /// 用户不需要理解 JIT，也不需要自己在系统里找工具、记流程。
+    func startAutomaticJIT() {
+        guard !isEnablingJIT else { return }
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        let osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        // pid 用进程自己的，不是当前前台 App 的：宿主 App 就是引擎本体，
+        // 要让助手附加上「正在跑游戏的这个进程」，而不是冷启动一个新进程。
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let list = JITLauncher.candidates(bundleID: bundleID, pid: pid, osMajor: osMajor)
+
+        guard !list.isEmpty else {
+            isEnablingJIT = false
+            launchErrorMessage = "没拿到本 App 的标识，无法调起性能模式助手。请重启 App 再试。"
+            launchPhase = .failed("开启失败")
             return
         }
-        UIApplication.shared.open(url, options: [:]) { [weak self] opened in
-            guard !opened else { return }
-            Task { @MainActor in
-                self?.launchErrorMessage = "没有检测到 TrollStore，或它的 URL Scheme 没开。请在 TrollStore → Settings 里开启 URL Scheme Enabled 后重试。"
-                self?.launchPhase = .failed("JIT 未开启")
+
+        // 只有「因为这一项被拦下」才自动续跑；用户在设置页手动点时不该顺手触发启动。
+        if case .failed = launchPhase {
+            jitAutoResumeArmed = true
+        }
+        isEnablingJIT = true
+        awaitingJITReturn = true
+        launchErrorMessage = nil
+        openFirstAvailable(list, index: 0)
+    }
+
+    /// 依次尝试候选，用 `open` 的返回值判断有没有 App 接住。
+    ///
+    /// 刻意不用 `canOpenURL`：它要求 scheme 写在**宿主 App** 的
+    /// `LSApplicationQueriesSchemes` 里，而真机上宿主是 Amethyst 的包，
+    /// 我们改不到那份 Info.plist。`open` 不受这条限制。
+    private func openFirstAvailable(_ list: [JITLauncher.Candidate], index: Int) {
+        guard index < list.count else {
+            isEnablingJIT = false
+            launchErrorMessage = """
+            手机上没装可用的性能模式助手。iOS 18 需要先装一次 StikDebug（免费）：
+            1. 用 SideStore / 轻松签装 StikDebug；
+            2. 在 StikDebug 里导入本机配对文件；
+            3. 打开 LocalDevVPN，再回来点这个按钮。
+            TrollStore 用户如果装的是 .tipa，请到 TrollStore → Settings 打开 URL Scheme Enabled。
+            """
+            launchPhase = .failed("缺少性能模式助手")
+            return
+        }
+
+        let candidate = list[index]
+        UIApplication.shared.open(candidate.url, options: [:]) { [weak self] opened in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if opened {
+                    self.waitForJITAfterHandoff()
+                } else {
+                    self.openFirstAvailable(list, index: index + 1)
+                }
             }
         }
+    }
+
+    /// 跳过去之后开始等：助手 attach → 目标建 JIT 池 → `CS_DEBUGGED` 亮起。
+    private func waitForJITAfterHandoff() {
+        jitWaitTask?.cancel()
+        jitWaitTask = Task { [weak self] in
+            let ok = await JITProbe.waitUntilEnabled(timeout: 90)
+            guard !Task.isCancelled, let self = self else { return }
+            self.finishJITEnablement(success: ok)
+            guard !ok, self.isLaunchBlocked else { return }
+            self.launchErrorMessage = """
+            还没检测到性能模式生效。按顺序对一下：
+            1. LocalDevVPN 是「已连接」状态；
+            2. 在 StikDebug 里点的是 Enable JIT，目标选 YZL；
+            3. 点完直接切回来，别把 YZL 从后台划掉。
+            都对了还不行，就再点一次按钮。
+            """
+            self.launchPhase = .failed("性能模式未生效")
+        }
+    }
+
+    /// 回到前台补一次判定：真机上后台会挂起定时器，轮询不一定跑完。
+    /// 顺手刷新一次状态，用户自己在助手 App 里开完（没走我们的按钮）也能对上。
+    private func handleBecameActive() {
+        detectJIT()
+        guard awaitingJITReturn else { return }
+        if jitStatus == .enabled {
+            finishJITEnablement(success: true)
+        }
+    }
+
+    /// 手动「我已回来」：不依赖等待任务，随时可查。
+    func recheckJITNow() {
+        detectJIT()
+        if jitStatus == .enabled {
+            finishJITEnablement(success: true)
+        } else if awaitingJITReturn {
+            launchErrorMessage = "还没生效。确认 LocalDevVPN 已连接、StikDebug 里点的是 YZL，然后再点一次「一键开启性能模式」。"
+        }
+    }
+
+    private var isLaunchBlocked: Bool {
+        if case .failed = launchPhase { return true }
+        return false
+    }
+
+    private func finishJITEnablement(success: Bool) {
+        jitWaitTask?.cancel()
+        jitWaitTask = nil
+        isEnablingJIT = false
+        // 失败时不清 awaitingJITReturn：用户可能还在助手页里，切回来要能继续补判定。
+        guard success else { return }
+        awaitingJITReturn = false
+        jitStatus = .enabled
+        launchErrorMessage = nil
+        guard jitAutoResumeArmed else { return }
+        jitAutoResumeArmed = false
+        // 刚才就是被这一项拦下的：条件满足后直接接着启动，用户不用回去再点一次。
+        requestLaunch()
     }
 
     /// 设置页「立即处理」：对当前选中的版本做一次移动端适配，并把结果回显出来。
@@ -943,12 +1071,12 @@ final class AppState: ObservableObject {
 
         switch jitStatus {
         case .enabled:
-            checks.append(LaunchCheck(id: "jit", title: "JIT", detail: "已启用", status: .ok))
+            checks.append(LaunchCheck(id: "jit", title: "性能模式", detail: "JIT 已启用", status: .ok))
         case .disabled:
             checks.append(LaunchCheck(
                 id: "jit",
-                title: "JIT",
-                detail: "未启用。请用 TrollStore 或调试器附加开启 JIT 后重试。",
+                title: "性能模式",
+                detail: "未开启。点下方的「一键开启性能模式」，会跳到助手 App，点一下 Enable JIT 再切回来即可；开启后只要不把 App 从后台划掉，当天不用重复开。",
                 status: .failed
             ))
         case .unknown:

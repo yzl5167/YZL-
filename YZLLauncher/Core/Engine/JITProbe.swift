@@ -23,6 +23,27 @@ enum JITProbe {
         probe() ? .enabled : .disabled
     }
 
+    /// 轮询等调试器真的把 `CS_DEBUGGED` 打开。
+    ///
+    /// 不能「跳过去就算成功」：StikDebug 的流程是 attach → 让目标自己建 JIT 内存池 →
+    /// detach，中间有几百毫秒到十几秒的窗口，这段时间 `csops` 仍报未调试。
+    /// 真机上等待期间 App 多半在后台，`Task.sleep` 会被系统挂起，
+    /// 所以调用方回到前台时还会再查一次（`didBecomeActive`）。
+    static func waitUntilEnabled(
+        timeout: TimeInterval = 90,
+        interval: TimeInterval = 0.5,
+        using probe: @escaping Probe = JITProbe.systemProbe
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(max(timeout, 0))
+        let step = max(interval, 0.1)
+        while Date() < deadline {
+            if probe() { return true }
+            try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
+            if Task.isCancelled { return false }
+        }
+        return probe()
+    }
+
     static func systemProbe() -> Bool {
         #if canImport(Darwin)
         return hasDynamicCodesigningEntitlement() || hasCSDebuggedFlag()

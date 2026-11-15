@@ -233,19 +233,44 @@ struct LaunchSheet: View {
                 Text("启动需要什么")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
-                Text("微软正版账户 · 已安装的版本文件 · iOS JRE · Amethyst 启动内核 · 已开启的 JIT。前两项由本仓库完成，后三项属于 M2 引擎侧。")
+                Text("微软正版账户 · 已安装的版本文件 · iOS JRE · Amethyst 启动内核 · 已开启的性能模式（JIT）。前两项由本仓库完成，后三项属于 M2 引擎侧。")
                     .font(.system(size: 10))
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
 
                 if appState.jitStatus != .enabled {
-                    Button(appState.jitActionTitle) {
-                        appState.enableJIT()
+                    Divider().padding(.vertical, 4)
+
+                    Text("性能模式（每次冷启动开一次）")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(YZLTheme.text)
+                    Text("iOS 不允许 App 给自己开这个权限，必须借一个外部助手点一下。点按钮 → 跳过去 → 回来会自动继续，不需要你懂原理。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(YZLTheme.muted)
+                        .lineSpacing(3)
+
+                    if appState.isEnablingJIT {
+                        HStack(spacing: 8) {
+                            ProgressView().scaleEffect(0.65)
+                            Text("已跳转。在助手页点 Enable JIT，然后切回来。")
+                                .font(.system(size: 10))
+                                .foregroundStyle(YZLTheme.accentText)
+                        }
+                        .padding(.top, 2)
+
+                        Button("我已回来 · 重新检测") {
+                            appState.recheckJITNow()
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(YZLTheme.accentText)
+                        .buttonStyle(.plain)
+                    } else {
+                        Button(appState.jitActionTitle) {
+                            appState.enableJIT()
+                        }
+                        .buttonStyle(PrimaryButtonStyle(prominent: true))
+                        .padding(.top, 2)
                     }
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(YZLTheme.accentText)
-                    .buttonStyle(.plain)
-                    .padding(.top, 2)
                 }
             }
         }

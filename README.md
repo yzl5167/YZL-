@@ -295,6 +295,18 @@ Forge / NeoForge / Quilt 走安装器或独立 meta，需要后续单独接（An
 - **怎么反馈**：仍黑屏时，打开「文件」App → 我的 iPhone → YZL，把 `YZL-UI.log` 与 `YZL-boot.log` 一起发回来即可定位（有 `YZL-boot.log` 就说明框架加载成功了）。
 - **顺带交付**：版本设置页（每版本内存 / JVM 参数 / 窗口宽高 / 全屏 / Java 锁定 + 启动自检与引擎双读）。
 
+### 2026-11-15：把「开 JIT」压成一次点击（不是绕开，是隐藏复杂度）
+
+iOS 18 非越狱**没有**「不依赖调试器就能跑 JVM」的路：W^X 让进程无法同时可写可执行，JVM 建 code cache 第一步就失败，`-Xint` 同样起不来（Pojav 上游 issue #482 有作者明确结论，UTM SE 那种解释器能跑是因为它不需要 JVM 的 code cache）。所以方向不是「绕开」，而是**让用户不需要理解它**。
+
+- `Core/Engine/JITLauncher.swift`：把「用哪个助手、带什么参数」收成一张候选表 —— iOS 26+ 的 `stikdebug://enable-jit?…&script-name=universal`、通用 `stikdebug`、改名前的 `stikjit`、TrollStore 的 `apple-magnifier`，依次尝试，装了哪个就用哪个，用户不必先知道自己属于哪种部署方式。
+- **必须带 `pid`**：只给 `bundle-id` 时 StikDebug 会先冷启动目标再附加，在目标建好 JIT 池之前就 detach，回来仍是「未启用」；带当前进程 pid 才是「附加到正在运行的进程」，一次即成。
+- 运行期**不依赖 `canOpenURL`**：真机宿主是 Amethyst 的包，`LSApplicationQueriesSchemes` 我们改不到，查询会恒为 false、被误判成「没装助手」。改用 `open` 的返回值判断。
+- `AppState.startAutomaticJIT()`：跳转 → 轮询 `CS_DEBUGGED`（`JITProbe.waitUntilEnabled`）→ 回前台再补一次（真机后台会挂起定时器）→ 成功则**自动接着启动**，用户不用回去再点「重新检查」。失败只给三条能照做的检查项，不甩术语。
+- 界面统一改叫「性能模式」，按钮「一键开启性能模式」；进行中显示进度条与「我已回来 · 重新检测」。
+- 一个能省一半操作的事实：**JIT 状态跟进程走**。开一次后把 App 留在后台不划掉，当天不用重复开。
+- 新增 `Tests/JITLauncherTests.swift`（9 条）：URL 组装、iOS 26 脚本分流、旧 scheme 兜底、TrollStore 不带 pid、空 bundle-id、带连字符的包名、等待超时 / 重试 / 已开立即返回。
+
 ## 目录结构
 
 ```

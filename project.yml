@@ -50,6 +50,11 @@ targets:
         UIRequiresFullScreen: true
         LSApplicationQueriesSchemes:
           - apple-magnifier
+          # 一键开性能模式的助手（见 Core/Engine/JITLauncher.swift）。
+          # 注意：真机上宿主是 Amethyst 的包，它的 Info.plist 不含这两项，
+          # 所以运行期只用 `open` 的返回值判断，不依赖 canOpenURL。
+          - stikdebug
+          - stikjit
 
   YZLLauncherTests:
     type: bundle.unit-test
