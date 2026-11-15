@@ -1,0 +1,74 @@
+# 拿不到 LocalDevVPN 怎么开 JIT
+
+StikDebug 要连 `10.7.0.1`（手机自己的回环地址），这个地址只有「本机 VPN」能建出来。
+市面上这类 App 只有两个实现：
+
+| App | 来源 | 地区限制 |
+|---|---|---|
+| LocalDevVPN | App Store（Coxson Engineering） | 只在部分区上架 |
+| **StosVPN** | SideStore 团队开源（MIT），只出源码 | 无，任何区都能签 |
+
+所以改不了地区不是死路：**用 StosVPN，它不走商店。**
+
+---
+
+## 一、装 StosVPN
+
+1. 拿到 `StosVPN-unsigned.ipa`（本仓库 CI 的 `StosVPN build` 工作流产出的 artifact：
+   `StosVPN-unsigned`，5.1 MB，sha256 `5905c06b28e4a75bd9c2bb4c120559d90fd258f9c9268b3347eba3f6785b6a11`）。
+2. 用你**现在签 YZL 的那套工具**签名。两条硬要求：
+   - **保留原有 entitlements，不要「清空权限」**。需要的是这两项：
+     ```xml
+     <key>com.apple.developer.networking.vpn.api</key>
+     <array><string>allow-vpn</string></array>
+     <key>com.apple.developer.networking.networkextension</key>
+     <array><string>packet-tunnel-provider</string></array>
+     ```
+   - **不要改 bundle id**（`com.stossy11.StosVPN`，扩展是 `com.stossy11.StosVPN.TunnelProv`）。
+     改了之后主 App 找不到自己的扩展，Connect 会直接失败。
+3. 装完打开 StosVPN → 点 **Connect** → 系统弹「StosVPN 想添加 VPN 配置」→ **允许** → 面容/密码确认。
+
+**签名工具怎么选**（影响成败，不只是能不能装上）：
+
+| 工具 | 默认是否保留原权限 | 备注 |
+|---|---|---|
+| Feather | 保留，可在 Entitlements 页看到并编辑 | 最省事，扩展会一起签 |
+| SideStore | 保留 | 走它自己的刷新通道，适合长期用 |
+| 轻松签 / ESign | 多数版本保留，但要在签名设置里勾「保留权限 / 自定义权限」 | 关掉就必失败 |
+| Sideloadly | 不保留（只留描述文件里的） | 用它签 VPN 大概率建不了隧道，建议只用来装 YZL |
+
+## 二、回到 StikDebug
+1. 确认 VPN 状态栏有 `VPN` 图标（StosVPN 建的是本机隧道，不耗流量、不出网）。
+2. StikDebug → **Enable JIT** → 选 YZL。
+3. 成功后回 YZL 点「开始游戏」。
+
+---
+
+## 三、失败对照表
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 点 Connect 没有任何反应/秒退 | 签名把 `packet-tunnel-provider` 丢了 | 用签名工具的「导入 entitlements」把上面两段加回去，重签 |
+| 「无法添加 VPN 配置」 | 同上，或描述文件策略禁止 | 设置 → 通用 → VPN 与设备管理，删掉旧的 VPN 配置再试 |
+| 装上了但图标空白 / 打不开 | 扩展没被一起签 | 重签工具要勾「同时签名 PlugIns/扩展」 |
+| StikDebug 一直 Not Connected | VPN 没连上，或同时开了别的 VPN | 只留 StosVPN，关掉加速器/DNS 类 App |
+| Enable JIT 成功但 YZL 黑屏 | 不是 VPN 问题 | 取 `Documents/YZL-UI.log` 看注入结果 |
+
+---
+
+## 四、不想签这个包的两条替代
+
+1. **注册一个新的外区 Apple ID**（不是「改地区」，是另开一个号，只登 App Store）：
+   设置头像 → 媒体与购买项目 → 退出登录 → App Store 登外区号 → 搜 LocalDevVPN → 获取 → 切回原号。
+   已装的 App 不会被删。
+2. **用电脑，不要 VPN**：Sideloadly 装包时勾 `Enable JIT`，或 AltServer 的 AltJIT（同一 Wi-Fi）。
+   代价是每次启动前电脑要开着。
+
+---
+
+## 附：这个包是怎么来的
+
+- 上游 `SideStore/StosVPN`，commit `010bc14`，许可证 MIT（带署名要求）。
+- CI 用 macOS runner 跑 `xcodebuild archive`（`CODE_SIGNING_ALLOWED=NO`），再 `ldid` 分别签
+  `TunnelProv.appex` 与主二进制，权限取自仓库内的 `TunnelProv.entitlements` / `StosVPN.entitlements`。
+- 产物是**假签名**，不能直接装，必须你自己重签 —— 和 `YZL-engine-sideload-unsigned.ipa` 同一套路。
