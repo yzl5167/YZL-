@@ -1,5 +1,19 @@
 # 拿不到 LocalDevVPN 怎么开 JIT
 
+> **2026-11-15 实测回填（重要）**：真机装完后首页直接显示红色 `error`。
+> 上游维护者在同类 issue（#35「sideloading decrypted ipa 权限」）里明确回复：
+> **「You can't use the vpn entitlement for apps sideloaded with a free account.
+> Just get it from the App Store.」**
+>
+> 也就是说 `com.apple.developer.networking.vpn.api` / `packet-tunnel-provider`
+> 这两个权限，**免费 Apple ID 签的包用不了**，与签得对不对、装得好不好无关。
+> 真正的门槛是**签名证书本身带 Network Extension 能力**：付费开发者账号（在
+> App ID 上勾 Network Extensions 后重签）或权限齐全的企业证书才行。
+> 同一个 issue 里另一条结论：StosVPN 已被 LocalDevVPN 取代，且 LocalDevVPN
+> **只在中国区之外上架**。
+>
+> 下面保留原始步骤，供**有付费证书**的人使用；免费证书用户请直接看第五节。
+
 StikDebug 要连 `10.7.0.1`（手机自己的回环地址），这个地址只有「本机 VPN」能建出来。
 市面上这类 App 只有两个实现：
 
@@ -65,6 +79,21 @@ StikDebug 要连 `10.7.0.1`（手机自己的回环地址），这个地址只�
    代价是每次启动前电脑要开着。
 
 ---
+
+## 五、免费证书用户的实际出路
+
+| 条件 | 能做 | 代价 |
+|---|---|---|
+| 有非中国区 Apple ID（新注册也行） | 商店装 LocalDevVPN，一次搞定 | 一个邮箱 + 外区地址，不动原账号 |
+| 有付费开发者账号（$99/年） | App ID 勾 Network Extensions → 重签 StosVPN | 钱 + 每年续 |
+| iOS 26 / 27 | 内置 JIT（appex 自带配对通道，**完全不需要 VPN**） | 等我把 `docs/builtin-jit.md` 那套做出来 |
+| iOS ≤ 17.0 | TrollStore | 换设备 |
+| 以上都没有 | 电脑开 JIT（Sideloadly / AltServer） | 每次启动前电脑开着 |
+
+关键结论：**VPN 这条路只在 iOS 18 及以下且签名证书带 VPN 权限时才通。**
+iOS 26 起内置 JIT 走的是 RemotePairing（`NSLocalNetworkUsageDescription`），
+Husk 的实现里没有一处 `NEPacketTunnel` / `10.7.0.1`，说明它不依赖本机 VPN——
+这是唯一能同时绕开「VPN」和「电脑」的形态。
 
 ## 附：这个包是怎么来的
 
