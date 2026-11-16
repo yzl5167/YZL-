@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- StikDebug 免电脑 JIT 依赖 get-task-allow：重签时必须保留 -->
+	<key>get-task-allow</key>
+	<true/>
+	<!-- Minecraft 内存上限放宽；若签名后闪退可删除这两条只留 get-task-allow -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+</dict>
+</plist>

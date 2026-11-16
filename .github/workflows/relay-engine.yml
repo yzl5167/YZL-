@@ -35,14 +35,17 @@ jobs:
           IPA=$(find art -name '*.ipa' | head -1)
           test -n "$IPA"
           echo "IPA=$IPA" >> "$GITHUB_ENV"
+          PLIST=$(find art -name 'entitlements-jit-dev.plist' | head -1)
+          test -n "$PLIST"
+          echo "PLIST=$PLIST" >> "$GITHUB_ENV"
           # 2026-11-09：仓库默认 workflow 权限已改 write，这里直接建 engine-latest
           # Release（此前 GITHUB_TOKEN 只读导致 403、Release 造不出来）。
           gh release delete engine-latest --cleanup-tag \
             --repo "${{ github.repository }}" -y 2>/dev/null || true
-          gh release create engine-latest "$TIPA" "$IPA" \
+          gh release create engine-latest "$TIPA" "$IPA" "$PLIST" \
             --repo "${{ github.repository }}" \
             --title "YZL 引擎最新构建（engine-latest）" \
-            --notes "未签名 tipa：TrollStore 直接安装；代签必须重签所有文件（含 Frameworks 内动态库），否则 YZL UI 无法加载"
+            --notes "未签名 tipa/ipa 双包（同一份含内核）；entitlements-jit-dev.plist 给代签/全能签「自定义权限」用，保住 get-task-allow 才能开 StikDebug JIT"
 
       - name: Upload packages to filebin (备用直链)
         env:
@@ -57,7 +60,11 @@ jobs:
           curl -sS --max-time 1200 -X POST --data-binary "@${TIPA}" \
             "https://filebin.net/${BIN}/YZL-engine.tipa" -o fb_tipa.json || echo "tipa upload failed"
           curl -sS --max-time 1200 -X POST --data-binary "@${IPA}" \
-            "https://filebin.net/${BIN}/YZL-engine-sideload-unsigned.ipa" -o fb_ipa.json || echo "ipa upload failed"
+            "https://filebin.net/${BIN}/YZL-engine-unsigned.ipa" -o fb_ipa.json || echo "ipa upload failed"
+          if [ -n "$PLIST" ] && [ -f "$PLIST" ]; then
+            curl -sS --max-time 300 -X POST --data-binary "@${PLIST}" \
+              "https://filebin.net/${BIN}/entitlements-jit-dev.plist" -o fb_plist.json || echo "plist upload failed"
+          fi
           cat fb_tipa.json 2>/dev/null || true
           cat fb_ipa.json 2>/dev/null || true
 
@@ -70,6 +77,6 @@ jobs:
           ls -la "$TIPA" "$IPA" 2>/dev/null || true
           echo "FILEBIN_BIN=${FILEBIN_BIN:-}"
           echo "filebin tipa: https://filebin.net/${FILEBIN_BIN}/YZL-engine.tipa"
-          echo "filebin ipa : https://filebin.net/${FILEBIN_BIN}/YZL-engine-sideload-unsigned.ipa"
+          echo "filebin ipa : https://filebin.net/${FILEBIN_BIN}/YZL-engine-unsigned.ipa"
           cat fb_tipa.json 2>/dev/null || true
           cat fb_ipa.json 2>/dev/null || true
