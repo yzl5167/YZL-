@@ -86,14 +86,17 @@ StikDebug 要连 `10.7.0.1`（手机自己的回环地址），这个地址只�
 |---|---|---|
 | 有非中国区 Apple ID（新注册也行） | 商店装 LocalDevVPN，一次搞定 | 一个邮箱 + 外区地址，不动原账号 |
 | 有付费开发者账号（$99/年） | App ID 勾 Network Extensions → 重签 StosVPN | 钱 + 每年续 |
-| iOS 26 / 27 | 内置 JIT（appex 自带配对通道，**完全不需要 VPN**） | 等我把 `docs/builtin-jit.md` 那套做出来 |
 | iOS ≤ 17.0 | TrollStore | 换设备 |
 | 以上都没有 | 电脑开 JIT（Sideloadly / AltServer） | 每次启动前电脑开着 |
 
-关键结论：**VPN 这条路只在 iOS 18 及以下且签名证书带 VPN 权限时才通。**
-iOS 26 起内置 JIT 走的是 RemotePairing（`NSLocalNetworkUsageDescription`），
-Husk 的实现里没有一处 `NEPacketTunnel` / `10.7.0.1`，说明它不依赖本机 VPN——
-这是唯一能同时绕开「VPN」和「电脑」的形态。
+关键结论：**VPN 这条路只在签名证书带 VPN 权限时才通**，与系统版本无关。
+
+**关于「内置 JIT 能不能免 VPN」**：内置 JIT 方案已于 2026-11-17 决定放弃（见
+`docs/builtin-jit.md`），现行路线统一走外部助手 StikDebug / StikJIT。就核实过的事实而言：
+Husk 这类实现里 grep 不到 `NEPacketTunnel` / `10.7.0.1`，是说它自己不*提供* VPN，
+但仍然*要求*有 `10.7.0.1` 这条 RSD 隧道（`checkingReachability` →
+「LocalDevVPN is reachable」）。换言之，即便做内置 JIT 也省不掉 VPN——这也是放弃它的
+理由之一。`deviceAddress` 可改，但 RSD 只在该 utun 上监听，换成 Wi-Fi 局域网 IP 通常连不上。
 
 ## 附：这个包是怎么来的
 

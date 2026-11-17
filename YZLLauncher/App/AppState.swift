@@ -801,6 +801,7 @@ final class AppState: ObservableObject {
 
     private func performLaunch(_ plan: LaunchPlan) async {
         launchPhase = .launching
+        YZLBootLog.write("performLaunch | version=\(plan.version.id) mem=\(plan.memoryMB)MB")
         try? FileManager.default.createDirectory(
             at: plan.gameDirectory,
             withIntermediateDirectories: true
@@ -817,8 +818,10 @@ final class AppState: ObservableObject {
         )
         do {
             try await engine.launch(plan)
+            YZLBootLog.write("performLaunch engine returned OK → running")
             launchPhase = .running
         } catch {
+            YZLBootLog.write("performLaunch FAILED | \(error.localizedDescription)")
             launchPhase = .failed(error.localizedDescription)
         }
     }

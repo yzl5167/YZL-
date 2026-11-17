@@ -63,12 +63,89 @@ else
 fi
 
 echo "[engine] 4.5/6 pre-stage JRE archives（RUNNER=1 时 Makefile 跳过下载）"
+# JRE 来源（2026-11-17 修复）：旧的 assets.angelauramc.dev 已失联，
+# 下载超时只会解出空壳 → 引擎包只剩 Java 17。改用实测可用的源：
+#   · Java 8/17/21：Vlad-Games PojavLauncher 3.0 release 的 iOS aarch64 真 JRE
+#     （zip 内是单个 tar.xz，解开即 release + lib/，命中 RuntimeLocator 标记）
+#   · Java 25：官方无 iOS 构建，实验性地拿 Microsoft macOS aarch64 JDK，
+#     用 vtool 把 Mach-O 平台标记改成 ios 再 ldid 伪签。macOS JRE 依赖 AppKit，
+#     真机大概率跑不起来——仅作占位/实验，**失败不阻断** 8/17/21 出包。
+# 目标目录统一为 depends/java-N-openjdk/（内含 release 标记文件，
+# Makefile 的 METHOD_JAVA_UNPACK 见 release 即跳过，直接用我们预置的目录）。
 mkdir -p "$WORK/amethyst/depends" && cd "$WORK/amethyst/depends"
-for v in 8 17 21 25; do
-  curl -fL --retry 3 "https://assets.angelauramc.dev/openjdk/ios-arm64/jre$v-ios-aarch64.zip" -o "jre$v-ios-aarch64.zip"
-  unzip -oq "jre$v-ios-aarch64.zip" && rm "jre$v-ios-aarch64.zip"
-  echo "jre$v staged"
+
+JRE_BASE="https://github.com/Vlad-Games/PojavLauncher_iOS/releases/download/3.0"
+
+stage_ios_jre() {
+  local v="$1" url="$2" zip="jre${v}-src.zip" inner tar
+  echo "[engine] jre$v: 下载 $url"
+  if ! curl -fL --retry 3 --max-time 900 "$url" -o "$zip"; then
+    echo "[engine] WARN: jre$v 下载失败，跳过" >&2; return 1
+  fi
+  inner="$(unzip -Z1 "$zip" 2>/dev/null | grep -E '\.tar\.xz$' | head -1)"
+  if [ -z "$inner" ]; then
+    echo "[engine] WARN: jre$v zip 内无 tar.xz，跳过" >&2; rm -f "$zip"; return 1
+  fi
+  unzip -oq "$zip" "$inner" && rm -f "$zip"
+  rm -rf "jre${v}-x" && mkdir -p "jre${v}-x"
+  tar -xJf "$inner" -C "jre${v}-x" || { echo "[engine] WARN: jre$v 解压失败" >&2; return 1; }
+  rm -f "$inner"
+  if [ ! -f "jre${v}-x/release" ]; then
+    # 有些归档多套一层目录，找含 release 的那一层
+    local relroot
+    relroot="$(dirname "$(find "jre${v}-x" -type f -name release | head -1)")"
+    [ -n "$relroot" ] || { echo "[engine] WARN: jre$v 无 release 标记" >&2; return 1; }
+    rm -rf "java-${v}-openjdk" && mv "$relroot" "java-${v}-openjdk"
+  else
+    rm -rf "java-${v}-openjdk" && mv "jre${v}-x" "java-${v}-openjdk"
+  fi
+  rm -rf "jre${v}-x"
+  if [ ! -f "java-${v}-openjdk/release" ]; then
+    echo "[engine] WARN: jre$v 暂存后缺 release" >&2; return 1
+  fi
+  echo "[engine] jre$v staged ($(du -sh "java-${v}-openjdk" | cut -f1))"
+}
+
+# 8/17/21：真·iOS JRE，缺失即构建失败（不允许再出只有 17 的包）
+for v in 8 17 21; do
+  stage_ios_jre "$v" "$JRE_BASE/jre${v}-ios-aarch64.zip" || {
+    echo "[engine] ERROR: Java $v 是必需运行时，暂存失败，拒绝出包" >&2; exit 1
+  }
 done
+
+# 25：macOS aarch64 JDK 转换（实验，失败仅告警不阻断）
+if command -v vtool >/dev/null 2>&1; then
+  echo "[engine] jre25: 实验性转换 macOS aarch64 JDK25 → iOS（失败不阻断）"
+  if curl -fL --retry 3 --max-time 1200 \
+      "https://aka.ms/download-jdk/microsoft-jdk-25.0.5.0.2-macos-aarch64.tar.gz" \
+      -o jdk25-macos.tar.gz; then
+    rm -rf jdk25-x && mkdir -p jdk25-x
+    if tar -xzf jdk25-macos.tar.gz -C jdk25-x; then
+      home25="$(dirname "$(find jdk25-x -type f -name release | head -1)")"
+      if [ -n "$home25" ] && [ -f "$home25/release" ]; then
+        # 把包内所有 Mach-O 的平台标记从 macOS 改成 iOS 并伪签，尽量提高兼容几率
+        find "$home25" -type f -perm -u+x | while read -r f; do
+          if file "$f" 2>/dev/null | grep -q 'Mach-O'; then
+            vtool -arch arm64 -set-build-version ios 15.0 26.0 -replace -output "$f" "$f" 2>/dev/null || true
+            ldid -S "$f" 2>/dev/null || true
+          fi
+        done
+        rm -rf java-25-openjdk && cp -R "$home25" java-25-openjdk
+        echo "[engine] jre25 staged (experimental, $(du -sh java-25-openjdk | cut -f1))"
+      else
+        echo "[engine] WARN: jre25 解包后无 release，跳过" >&2
+      fi
+    else
+      echo "[engine] WARN: jre25 解压失败，跳过" >&2
+    fi
+    rm -rf jdk25-x jdk25-macos.tar.gz
+  else
+    echo "[engine] WARN: jre25 下载失败，跳过" >&2
+  fi
+else
+  echo "[engine] WARN: 无 vtool，跳过实验性 jre25" >&2
+fi
+
 cd "$WORK/amethyst"
 
 echo "[engine] 5/6 make payload (native + dep_mg + java + jre + payload)"

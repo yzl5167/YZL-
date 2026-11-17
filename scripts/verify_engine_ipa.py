@@ -7,8 +7,9 @@
 
 检查项：
   * YZLUI.framework/YZLUI 必须是真实 Mach-O（不能是只有资源、没有二进制的空壳）
-  * JRE 8 / 17 必须真实可用（含 libjli.dylib 且体积达标），否则拒绝出包
-  * JRE 21 / 25 缺席只告警并写入报告，不阻断（当前上游源确实拿不到）
+  * JRE 8 / 17 / 21 必须真实可用（含 libjli.dylib 且体积达标），否则拒绝出包
+    （2026-11-17 起 21 已有可用的 iOS 真源，1.21+ 版本依赖它，不能再缺）
+  * JRE 25 缺席只告警并写入报告，不阻断（官方无 iOS 构建，当前为实验性转换）
   * launcher.jar、图形翻译层 dylib、Java 桥 jar 必须存在
   * sideload 模式额外要求：无 _CodeSignature / embedded.mobileprovision / CodeResources，
     且二进制里不带 TrollStore 私有 entitlement 字符串
@@ -159,22 +160,23 @@ def main():
         d = jre.get(ver)
         return bool(d and d["jli"] > 10000 and d["count"] > 20 and d["bytes"] > 20 * 1024 * 1024)
 
-    for ver in ("8", "17"):
+    for ver, why in (("8", "1.16-"), ("17", "1.18-1.20.x"), ("21", "1.21+")):
         if healthy(ver):
             note(f"OK  JRE {ver} 真实可用")
         else:
             errors.append(
                 f"JRE {ver} 缺失或为空壳（需要 libjli.dylib + >20 条目 + >20MB）。"
-                f"没有它 1.16- / 1.18-1.20.x 无法启动，拒绝出包"
+                f"没有它 {why} 无法启动，拒绝出包"
             )
-    for ver in ("21", "25"):
-        if healthy(ver):
-            note(f"OK  JRE {ver} 真实可用")
-        else:
-            warnings.append(
-                f"JRE {ver} 缺席或为空壳：需要 Java {ver} 的版本（如 1.21+）暂不能玩，"
-                f"请在安装器里选 1.20.1 及以下"
-            )
+    # 25 无官方 iOS 构建，build-engine.sh 里是 macOS JDK 的实验性转换，
+    # 即便暂存成功也可能在真机跑不起来，因此只告警、不阻断出包。
+    if healthy("25"):
+        note("OK  JRE 25 存在（实验性转换，真机兼容性未验证）")
+    else:
+        warnings.append(
+            "JRE 25 缺席或为空壳：官方无 iOS 构建，且没有 Minecraft 版本需要 Java 25，"
+            "可忽略"
+        )
 
     # 3. 关键引擎件
     def exists_contains(fragment, suffix=None):

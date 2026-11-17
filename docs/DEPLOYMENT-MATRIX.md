@@ -22,7 +22,7 @@
 | `permanentNoComputer` | **iOS 14.0 – 15.4.1**（A12+ 可到 15.6 beta） | TrollStore 永久 | **全程零电脑** | TrollStore 自动 + App 内 URL Scheme | `com.yzl.launcher.tipa` |
 | `oneTimeComputerThenPermanent` | 15.5 / 15.6 正式版、16.0 – 16.6.1、16.7 RC (20H18)、17.0 | TrollStore 永久 | **首次一次**：电脑侧载 TrollInstallerX / TrollRestore | 同上，之后永久免维护 | `com.yzl.launcher.tipa` |
 | `oneTimePairing` | **17.4 – 18.x** | 免费 ID 7 天（SideStore 手机续签） | **首次一次**：电脑生成配对文件 | 之后手机端 StikDebug + LocalDevVPN | 未签名 IPA 自签 |
-| `appJITAdaptation` | **iOS 26+** | 同上 | 首次一次 | StikDebug 有限支持，App 需适配新 JIT 方式（M2 待做） | 未签名 IPA 自签 |
+| `appJITAdaptation` | **iOS 26+** | 同上 | 首次一次 | StikDebug（`universal.js` 断点脚本）；内置 JIT 方案已放弃，见 `builtin-jit.md` | 未签名 IPA 自签 |
 | `computerAttached` | 16.7.x 非 RC、17.0.1 – 17.3.x | 免费 ID 7 天 | **持续需要电脑** | AltServer / SideJITServer 附加 | 未签名 IPA 自签 |
 | `unsupportedOld` | < iOS 15.0 | — | — | 本 App 部署目标为 15.0 | 不支持 |
 

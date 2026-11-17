@@ -85,6 +85,11 @@ struct YZLEngineHost: LauncherEngine {
     }
 
     func launch(_ plan: LaunchPlan) async throws {
+        // 启动全链路落盘（真机无 Xcode 时唯一现场证据）。用户反馈过
+        // 「Java 17 版本一启动启动器瞬间崩溃」——进程级 abort 拿不到 Swift 异常，
+        // 必须在每一步写盘，崩溃后从「文件」App 取 YZL-boot.log 才能定位卡在哪。
+        YZLBootLog.write("launch BEGIN | version=\(plan.version.id) mem=\(plan.memoryMB)MB lockedJava=\(plan.lockedJavaMajor.map(String.init) ?? "auto")")
+
         // 先确定该游戏版本需要哪个 Java，再据此挑 JRE 写进 JAVA_HOME。
         // 旧实现用 RuntimeLocator.javaHome() 拿「第一个有效目录」，
         // 1.16（要 Java 8）可能被塞 Java 17、1.21（要 Java 21）可能被塞 8，
@@ -95,23 +100,31 @@ struct YZLEngineHost: LauncherEngine {
                 gameVersion: plan.version.id,
                 declaredMajor: plan.detail.javaVersion?.majorVersion
             )
+        YZLBootLog.write("launch requiredJava=\(requiredMajor) declared=\(plan.detail.javaVersion?.majorVersion.map(String.init) ?? "nil")")
         guard let javaHome = javaHomeProvider(requiredMajor) else {
-            throw EngineError.launchFailed(
-                JavaEnvironment.missingHint(
-                    required: requiredMajor,
-                    available: JavaEnvironment.availableMajors()
-                )
+            let hint = JavaEnvironment.missingHint(
+                required: requiredMajor,
+                available: JavaEnvironment.availableMajors()
             )
+            YZLBootLog.write("launch ABORT javaHome missing | \(hint)")
+            throw EngineError.launchFailed(hint)
         }
+        YZLBootLog.write("launch javaHome=\(javaHome.path)")
+
         guard JITProbe.detect(using: probe) == .enabled else {
+            YZLBootLog.write("launch ABORT JIT disabled")
             throw EngineError.jitDisabled
         }
+        YZLBootLog.write("launch JIT enabled")
         guard payload.isLaunchable else {
+            YZLBootLog.write("launch ABORT payload: \(payload.summary)")
             throw EngineLaunchFailure.payloadMissing(payload.summary)
         }
         guard let launchSymbol = resolveSymbol("launchJVM") else {
+            YZLBootLog.write("launch ABORT launchJVM symbol not found")
             throw EngineError.notIntegrated
         }
+        YZLBootLog.write("launch payload OK + launchJVM FOUND")
 
         // 1. 写启动契约（含令牌，只落应用沙箱内的 YZLEngineHome）。
         let accessToken = Self.accessTokenFromPlan(plan)
@@ -122,6 +135,7 @@ struct YZLEngineHost: LauncherEngine {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         let document = try EngineLaunchContract.document(from: plan, accessToken: accessToken)
         try EngineLaunchContract.write(document, homeDirectory: home)
+        YZLBootLog.write("launch contract written | javaMajor=\(document.javaMajor) mainClass=\(document.mainClass) cpEntries=\(document.classpath.count) gameArgs=\(document.gameArguments.count)")
 
         // 1.5 移动端适配 + 真实堆大小。
         // 这两步都必须在 JVM 起来之前完成：Amethyst 的 -Xmx 是在 launchJVM 里读偏好算的，
@@ -140,6 +154,14 @@ struct YZLEngineHost: LauncherEngine {
         setenv("YZL_LAUNCH_PLAN", home.appendingPathComponent("yzl-launch-plan.json").path, 1)
         setenv("GAME_DIR", plan.gameDirectory.path, 1)
         setenv("JAVA_HOME", javaHome.path, 1)
+        YZLBootLog.write("launch env ready | JAVA_HOME=\(javaHome.path) heap=\(plan.memoryMB)MB")
+
+        // 一致性硬校验：JAVA_HOME 指向的 JRE 大版本必须等于契约 javaMajor。
+        // 不一致会让 fork 侧按一个版本、JVM 参数按另一个版本，是潜在的瞬间崩溃源。
+        let scannedMajor = JavaEnvironment.major(of: javaHome, fileManager: .default)
+        if let scannedMajor, scannedMajor != requiredMajor {
+            YZLBootLog.write("WARN javaHome major=\(scannedMajor) != required=\(requiredMajor)（按实际 \(scannedMajor) 继续）")
+        }
 
         // 3. 呈现游戏画面（fork 的 SurfaceViewController，运行时 msgSend
         //    `initWithMetadata:`——真签名见 Natives/SurfaceViewController.m:66；
@@ -150,6 +172,7 @@ struct YZLEngineHost: LauncherEngine {
             "javaVersion": ["majorVersion": document.javaMajor]
         ]
         await presentGameSurface(metadata: metadata)
+        YZLBootLog.write("launch surface presented | minJava=\(minJava)")
 
         // 4. launchJVM(username, launchTarget, width, height, minVersion)。
         //    JLI_Launch 阻塞当前线程直到游戏退出——必须离开主线程
@@ -166,6 +189,8 @@ struct YZLEngineHost: LauncherEngine {
         let baseArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
         let forwardedArguments = EngineJVMArguments.sanitized(from: plan.jvmArguments)
         let jvmArguments = baseArguments + forwardedArguments
+        YZLBootLog.write("launch CALL launchJVM | jvmArgs=\(jvmArguments.joined(separator: " "))")
+        YZLBootLog.write("launch JVM START (blocking) — 若下次日志停在这里，崩溃点在 JVM 内部")
 
         let exitCode: Int32 = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -182,6 +207,7 @@ struct YZLEngineHost: LauncherEngine {
                 continuation.resume(returning: code)
             }
         }
+        YZLBootLog.write("launch JVM RETURNED exitCode=\(exitCode)")
 
         // 5. 契约文件含令牌，启动流程已交接即删。
         EngineLaunchContract.remove(homeDirectory: home)
