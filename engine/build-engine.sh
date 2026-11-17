@@ -77,7 +77,8 @@ mkdir -p "$WORK/amethyst/depends" && cd "$WORK/amethyst/depends"
 JRE_BASE="https://github.com/Vlad-Games/PojavLauncher_iOS/releases/download/3.0"
 
 stage_ios_jre() {
-  local v="$1" url="$2" zip="jre${v}-src.zip" inner tar
+  local v="$1" url="$2" inner tar
+  local zip="jre${v}-src.zip"
   echo "[engine] jre$v: 下载 $url"
   if ! curl -fL --retry 3 --max-time 900 "$url" -o "$zip"; then
     echo "[engine] WARN: jre$v 下载失败，跳过" >&2; return 1
