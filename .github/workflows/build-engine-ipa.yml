@@ -23,7 +23,7 @@ on:
         required: false
         default: 'main'
       zulu_jre:
-        description: 'JRE 来源实验：传 1 启用 Zulu JRE 改写源（默认关闭）'
+        description: '已弃用：8/17/21 固定使用 Vlad iOS aarch64 真 JRE（保留参数仅为兼容）'
         required: false
         default: ''
 
@@ -93,115 +93,102 @@ jobs:
           ls -la "$FW/YZLUI"
 
       # RUNNER=1 时 Amethyst 的 METHOD_JAVA_UNPACK 有意跳过下载（依赖预置压缩包）。
-      # 原 CDN assets.angelauramc.dev 已死（动态 DNS 别名失效，2026-11-06 实测），
-      # 改从 Wayback Machine 逐版本探测下载；缺失版本放空 tar.xz 兜底
-      # （保证 payload 必出包，JRE 缺口由启动面板如实暴露，后续可经
-      #   fork 的 JRE 管理界面手动导入 tar.xz）。
-      - name: Pre-stage JRE archives (wayback + Pojav + fallback)
+      # 2026-11-17 修复：旧 assets.angelauramc.dev / Wayback / Pojav v2.2 路径
+      # 只能拿到 Java 17 或空壳，导致 verifier 正确拒绝出包。8/17/21 统一改用
+      # Vlad-Games PojavLauncher_iOS 3.0 的 iOS aarch64 真 JRE，缺失即硬失败。
+      # Java 25 仍按用户要求做 macOS aarch64 → iOS 实验性转换，失败只告警。
+      - name: Pre-stage JRE archives (Vlad iOS aarch64 + experimental JRE25)
         working-directory: amethyst
         run: |
+          set -euo pipefail
           mkdir -p depends && cd depends
-          for v in 8 17 21 25; do
-            name="jre${v}-ios-aarch64"
-            snap=$(curl -fsSL --max-time 30 "http://archive.org/wayback/available?url=assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);c=d.get("archived_snapshots",{}).get("closest",{});print(c.get("timestamp",""))' 2>/dev/null || true)
-            if [ -n "$snap" ]; then
-              echo "jre$v: wayback snapshot $snap, downloading..."
-              if curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 "https://web.archive.org/web/${snap}id_/https://assets.angelauramc.dev/openjdk/ios-arm64/${name}.zip" -o "${name}.zip"; then
-                unzip -oq "${name}.zip" || true
-                rm -f "${name}.zip"
-                if ! ls jre${v}-*.tar.xz >/dev/null 2>&1; then
-                  if [ -d "${name}" ]; then tar cfJ "${name}.tar.xz" "${name}";
-                  elif [ -d "java-${v}-openjdk" ]; then tar cfJ "${name}.tar.xz" "java-${v}-openjdk"; fi
-                fi
-                echo "jre$v: wayback OK"
-              else
-                echo "jre$v: wayback download FAILED"
-              fi
-            else
-              echo "jre$v: no wayback snapshot"
-            fi
-          done
 
-          # 来源 C（实验性，默认关闭）：Zulu macOS aarch64 → iOS 平台改写。
-          # 第十二/十三轮的「无法安装」疑似与改写后的 dylib 有关，先回退定位。
-          # 需要时用 workflow_dispatch inputs 传 zulu_jre=1 启用。
-          if [ "${{ inputs.zulu_jre }}" = "1" ]; then
-          for v in 21 25; do
-            if [ -f "java-${v}-openjdk/release" ]; then continue; fi
-            echo "source C: Zulu macOS aarch64 JRE $v -> iOS platform flip"
-            url=$(curl -fsSL --max-time 30 "https://api.azul.com/metadata/v1/zulu/packages/?java_version=${v}&os=macos&arch=aarch64&java_package_type=jre&release_status=ga&availability_types=CA" \
-              | python3 -c 'import sys,json;ps=[p for p in json.load(sys.stdin) if "fx" not in p["name"].lower()];print(ps[0]["download_url"] if ps else "")' 2>/dev/null || true)
-            if [ -z "$url" ]; then echo "  zulu lookup failed for $v"; continue; fi
-            echo "  $url"
-            if curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 "$url" -o zulu.zip; then
-              unzip -oq zulu.zip -d zulu-x && rm zulu.zip
-              root=$(dirname "$(find zulu-x -type f -name release | head -1)")
-              echo "  JDK root: $root"
-              find "$root" -type f | while read -r f; do
-                if file "$f" | grep -q 'Mach-O'; then
-                  vtool -arch arm64 -set-build-version ios 14.0 16.0 -replace -output "$f" "$f" || true
-                  ldid -S "$f" || true
-                fi
-              done
-              rm -rf "java-${v}-openjdk"
-              cp -R "$root" "java-${v}-openjdk"
-              echo "jre$v: zulu mac->ios converted ($(du -sh "java-${v}-openjdk" | cut -f1))"
-              rm -rf zulu-x
-            else
-              echo "  zulu download FAILED for $v"
-            fi
-          done
-          fi
+          JRE_API_BASE="https://api.github.com/repos/Vlad-Games/PojavLauncher_iOS/releases/assets"
+          JRE_DIRECT_BASE="https://github.com/Vlad-Games/PojavLauncher_iOS/releases/download/3.0"
 
-          # 来源 B：PojavLauncher iOS v2.2（GitHub 活源，103 MB）——解出内置
-          # java_runtimes，按版本重排进 depends/java-N-openjdk。放有 release
-          # 标记文件的目录会被 METHOD_JAVA_UNPACK 整体跳过，故只放目录。
-          if [ ! -f java-8-openjdk/release ]; then
-            echo "source B: extracting JREs from PojavLauncher iOS v2.2..."
-            # github.com/releases/download 域名在托管 runner 上持续返回 504，
-            # 而 GitHub API 的 release asset 端点（匿名 302 到
-            # objects.githubusercontent.com）实测可用。优先走 API，直链仅作兜底。
-            if ! curl -fL --retry 8 --retry-all-errors --retry-delay 5 --max-time 900 \
+          stage_ios_jre() {
+            local v="$1" asset_id="$2" zip="jre${v}-src.zip" inner tar
+            echo "jre$v: downloading GitHub release asset $asset_id"
+            if ! curl -fL --retry 5 --retry-all-errors --retry-delay 5 --max-time 900 \
               -H "Accept: application/octet-stream" \
-              "https://api.github.com/repos/PojavLauncherTeam/PojavLauncher_iOS/releases/assets/107024469" \
-              -o pojav22.ipa; then
-              echo "source B: API asset failed, fallback to release direct link"
-              rm -f pojav22.ipa
-              curl -fL --retry 5 --retry-all-errors --retry-delay 5 --max-time 900 \
-                "https://github.com/PojavLauncherTeam/PojavLauncher_iOS/releases/download/v2.2/net.kdt.pojavlauncher-2.2-ios.ipa" \
-                -o pojav22.ipa || echo "pojav download FAILED"
+              "$JRE_API_BASE/$asset_id" -o "$zip"; then
+              echo "jre$v: API asset download failed, fallback to direct release URL"
+              rm -f "$zip"
+              curl -fL --retry 3 --retry-all-errors --retry-delay 5 --max-time 900 \
+                "$JRE_DIRECT_BASE/jre${v}-ios-aarch64.zip" -o "$zip" || {
+                  echo "::error::jre$v 下载失败"
+                  return 1
+                }
             fi
-            if [ -f pojav22.ipa ] && [ "$(wc -c < pojav22.ipa)" -gt 100000000 ]; then
-              unzip -oq pojav22.ipa -d pojav-x || true
-              rm -f pojav22.ipa
-              for jli in $(find pojav-x -type f -name libjli.dylib); do
-                libdir=$(dirname "$jli")
-                if [ "$(basename "$libdir")" = "jli" ]; then
-                  root=$(dirname "$libdir"); major=8
+            inner="$(unzip -Z1 "$zip" 2>/dev/null | grep -E '\.tar\.xz$' | head -1)"
+            if [ -z "$inner" ]; then
+              echo "::error::jre$v zip 内无 tar.xz"
+              rm -f "$zip"
+              return 1
+            fi
+            unzip -oq "$zip" "$inner" && rm -f "$zip"
+            rm -rf "jre${v}-x" && mkdir -p "jre${v}-x"
+            tar -xJf "$inner" -C "jre${v}-x" || {
+              echo "::error::jre$v 解压失败"
+              return 1
+            }
+            rm -f "$inner"
+            if [ ! -f "jre${v}-x/release" ]; then
+              local relroot
+              relroot="$(dirname "$(find "jre${v}-x" -type f -name release | head -1)")"
+              if [ -z "$relroot" ] || [ "$relroot" = "." ]; then
+                echo "::error::jre$v 无 release 标记"
+                return 1
+              fi
+              rm -rf "java-${v}-openjdk" && mv "$relroot" "java-${v}-openjdk"
+            else
+              rm -rf "java-${v}-openjdk" && mv "jre${v}-x" "java-${v}-openjdk"
+            fi
+            rm -rf "jre${v}-x"
+            if [ ! -f "java-${v}-openjdk/release" ] || [ ! -d "java-${v}-openjdk/lib" ]; then
+              echo "::error::jre$v 暂存后缺 release/lib"
+              return 1
+            fi
+            echo "jre$v staged ($(du -sh "java-${v}-openjdk" | cut -f1))"
+          }
+
+          # Java 8/17/21 是必需运行时；任何一个失败都立即停止，不再生成空壳包。
+          stage_ios_jre 8 343387141
+          stage_ios_jre 17 343387165
+          stage_ios_jre 21 343387176
+
+          # Java 25：用户要求纳入，但官方无 iOS 构建；按 build-engine.sh 同款实验转换。
+          if command -v vtool >/dev/null 2>&1; then
+            echo "jre25: experimental macOS aarch64 JDK25 -> iOS platform flip"
+            if curl -fL --retry 3 --max-time 1200 \
+                "https://aka.ms/download-jdk/microsoft-jdk-25.0.5.0.2-macos-aarch64.tar.gz" \
+                -o jdk25-macos.tar.gz; then
+              rm -rf jdk25-x && mkdir -p jdk25-x
+              if tar -xzf jdk25-macos.tar.gz -C jdk25-x; then
+                home25="$(dirname "$(find jdk25-x -type f -name release | head -1)")"
+                if [ -n "$home25" ] && [ -f "$home25/release" ]; then
+                  find "$home25" -type f -perm -u+x | while read -r f; do
+                    if file "$f" 2>/dev/null | grep -q 'Mach-O'; then
+                      vtool -arch arm64 -set-build-version ios 15.0 26.0 -replace -output "$f" "$f" 2>/dev/null || true
+                      ldid -S "$f" 2>/dev/null || true
+                    fi
+                  done
+                  rm -rf java-25-openjdk && cp -R "$home25" java-25-openjdk
+                  echo "jre25 staged (experimental, $(du -sh java-25-openjdk | cut -f1))"
                 else
-                  root=$(dirname "$libdir")
-                  major=$(python3 -c "import re,os,sys; p=os.path.join(sys.argv[1],'release'); rel=(open(p,encoding='utf-8',errors='ignore').read() if os.path.isfile(p) else ''); m=re.search(r'JAVA_VERSION=\"([0-9.]+)', rel); v=(m.group(1) if m else '17'); v=(v.split('.')[1] if v.startswith('1.') else v); print(v.split('.')[0])" "$root")
+                  echo "::warning::jre25 解包后无 release，跳过"
                 fi
-                case "$major" in
-                  8|17|21|25)
-                    if [ ! -f "java-${major}-openjdk/release" ]; then
-                      rm -rf "java-${major}-openjdk"
-                      cp -R "$root" "java-${major}-openjdk"
-                      echo "jre$major: extracted from Pojav ipa ($(du -sh "java-${major}-openjdk" | cut -f1))"
-                    fi ;;
-                esac
-              done
-              rm -rf pojav-x
+              else
+                echo "::warning::jre25 解压失败，跳过"
+              fi
+              rm -rf jdk25-x jdk25-macos.tar.gz
+            else
+              echo "::warning::jre25 下载失败，跳过"
             fi
+          else
+            echo "::warning::无 vtool，跳过实验性 jre25"
           fi
 
-          # 兜底：仍缺席的版本放空 tar.xz（保证出包，缺口由启动面板标红）
-          for v in 8 17 21 25; do
-            if ! ls jre${v}-*.tar.xz >/dev/null 2>&1 && [ ! -f "java-${v}-openjdk/release" ]; then
-              echo "jre$v: EMPTY FALLBACK tar.xz（该运行时缺席，可后续经 JRE 管理界面导入）"
-              tar cfJ "jre${v}-ios-aarch64.tar.xz" -T /dev/null
-            fi
-          done
           ls -la
 
       # payload 目标组装 app 并签名，但不打 ipa zip——注入框架后我们自行打包。
