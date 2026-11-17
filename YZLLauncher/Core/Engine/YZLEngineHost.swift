@@ -100,7 +100,7 @@ struct YZLEngineHost: LauncherEngine {
                 gameVersion: plan.version.id,
                 declaredMajor: plan.detail.javaVersion?.majorVersion
             )
-        YZLBootLog.write("launch requiredJava=\(requiredMajor) declared=\(plan.detail.javaVersion?.majorVersion.map(String.init) ?? "nil")")
+        YZLBootLog.write("launch requiredJava=\(requiredMajor) declared=\((plan.detail.javaVersion?.majorVersion).map(String.init) ?? "nil")")
         guard let javaHome = javaHomeProvider(requiredMajor) else {
             let hint = JavaEnvironment.missingHint(
                 required: requiredMajor,
