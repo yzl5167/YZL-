@@ -107,7 +107,8 @@ jobs:
           JRE_DIRECT_BASE="https://github.com/Vlad-Games/PojavLauncher_iOS/releases/download/3.0"
 
           stage_ios_jre() {
-            local v="$1" asset_id="$2" zip="jre${v}-src.zip" inner tar
+            local v="$1" asset_id="$2" inner tar
+            local zip="jre${v}-src.zip"
             echo "jre$v: downloading GitHub release asset $asset_id"
             if ! curl -fL --retry 5 --retry-all-errors --retry-delay 5 --max-time 900 \
               -H "Accept: application/octet-stream" \
