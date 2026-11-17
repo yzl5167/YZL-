@@ -22,9 +22,10 @@ targets:
         excludes:
           - "Info.plist"
           - "Core/Engine/Resources/UniversalJIT26.js"
-    # iOS 26+ 一键 JIT 必须把脚本内容塞进深链；资源随包走，避免依赖助手本地分配。
-    resources:
+      # iOS 26+ 一键 JIT 必须把脚本内容塞进深链；资源随包走，避免依赖助手本地分配。
+      # 用 buildPhase: resources 而不是顶层 resources，确保 XcodeGen 真的复制进包。
       - path: YZLLauncher/Core/Engine/Resources/UniversalJIT26.js
+        buildPhase: resources
     dependencies:
       - sdk: WebKit.framework
     settings:
@@ -87,9 +88,9 @@ targets:
           - "App/YZLLauncherApp.swift"
           - "Core/Engine/Resources/UniversalJIT26.js"
       - path: YZLUI
-    # 引擎包里真正被加载的是 YZLUI.framework，脚本必须进框架包而不是只进外壳 App。
-    resources:
+      # 引擎包里真正被加载的是 YZLUI.framework，脚本必须进框架包而不是只进外壳 App。
       - path: YZLLauncher/Core/Engine/Resources/UniversalJIT26.js
+        buildPhase: resources
     dependencies:
       # 共享源码里的微软网页登录使用 WKWebView；framework target 必须显式链接，
       # 否则会出现「资源已产出但 YZLUI 二进制链接失败」的假成功。
