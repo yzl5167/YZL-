@@ -212,6 +212,24 @@ def main():
             note(f"OK  YZLUI 二进制 {size} 字节，Mach-O")
             check_arm64("YZLUI.framework/YZLUI", ui_bytes, errors, note)
 
+    # 1a. iOS 26+ JIT 脚本：深链会携带这份内容，缺了就会回退 legacy 脚本。
+    # Amethyst 在 JLI_Launch 前用 brk #0x69 探测，UniversalJIT26.js 必须含该分支。
+    jit_script_hit = next(
+        (n for n in names if n.endswith("Frameworks/YZLUI.framework/UniversalJIT26.js")),
+        None,
+    )
+    if not jit_script_hit:
+        errors.append(
+            "YZLUI.framework 缺 UniversalJIT26.js：iOS 26+ 一键 JIT 会回退 legacy 脚本，"
+            "引擎在 JLI_Launch 前退出（表现为主启动秒闪退）"
+        )
+    else:
+        script_bytes = z.read(jit_script_hit)
+        if b"legacyCommands" not in script_bytes or b"0x69" not in script_bytes:
+            errors.append("UniversalJIT26.js 内容不正确：缺 legacyCommands[0x69] 处理分支")
+        else:
+            note(f"OK  iOS 26 JIT 脚本 {by_name[jit_script_hit].file_size} 字节（含 0x69 分支）")
+
     # 1b. 引擎主二进制架构门禁（fork 的 Mach-O，全机型跑的就是它）
     engine_hit = next(
         (n for n in names if re.match(r"^" + re.escape(app_root) + r"/AngelAuraAmethyst$", n)),

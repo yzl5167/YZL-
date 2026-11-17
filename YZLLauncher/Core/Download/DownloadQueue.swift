@@ -116,11 +116,12 @@ final class DownloadQueue: ObservableObject {
         notice = nil
     }
 
-    /// 失败 / 取消是终态，用户需要能主动清掉主页横幅，否则会一直常驻。
-    /// 只重置展示状态，不动已下载的分片（断点续传数据仍保留）。
+    /// 完成 / 失败 / 取消都是终态，用户需要能主动清掉主页横幅，否则会一直常驻。
+    /// 2026-11-17 修复：安装完成面板的「完成」按钮原本被漏掉，点了没反应；
+    /// 现在 `.finished` 也纳入可关闭终态。只重置展示状态，不动已下载的分片。
     func dismissTerminalState() {
         switch state.phase {
-        case .failed, .cancelled:
+        case .finished, .failed, .cancelled:
             break
         default:
             return

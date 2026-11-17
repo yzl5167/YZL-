@@ -17,16 +17,31 @@ final class JITLauncherTests: XCTestCase {
         XCTAssertFalse(first.url.absoluteString.contains("script-name"))
     }
 
-    func testIOS26PrefersScriptVariant() {
+    func testIOS26PrefersUniversalScriptData() throws {
+        let script = try XCTUnwrap(JITLauncher.universalJITScriptData(),
+                                   "YZLUI.framework 必须内嵌 UniversalJIT26.js")
         let list = JITLauncher.candidates(bundleID: "com.yzl.launcher", pid: 99, osMajor: 26)
         guard list.count >= 2 else { return XCTFail("iOS 26 应先给带脚本的候选，再给通用的") }
-        XCTAssertTrue(list[0].url.absoluteString.contains("script-name=universal"))
-        XCTAssertFalse(list[1].url.absoluteString.contains("script-name"))
+
+        // 首选两条必须是「显式携带脚本内容」的 stikdebug / stikjit，
+        // 不能依赖助手里给 Amethyst 分配的 legacy 脚本。
+        XCTAssertEqual(list[0].scheme, "stikdebug")
+        XCTAssertEqual(list[1].scheme, "stikjit")
+        for candidate in list.prefix(2) {
+            XCTAssertTrue(candidate.carriesUniversalScript)
+            let items = URLComponents(url: candidate.url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let encoded = try XCTUnwrap(items.first { $0.name == "script-data" }?.value)
+            let decoded = try XCTUnwrap(Data(base64Encoded: encoded))
+            XCTAssertEqual(decoded, script)
+        }
     }
 
     func testOlderSystemHasNoScriptCandidate() {
         let list = JITLauncher.candidates(bundleID: "com.yzl.launcher", pid: 1, osMajor: 17)
-        XCTAssertFalse(list.contains { $0.url.absoluteString.contains("script-name") })
+        XCTAssertFalse(list.contains { candidate in
+            candidate.url.absoluteString.contains("script-name") ||
+            candidate.url.absoluteString.contains("script-data")
+        })
     }
 
     func testLegacyStikJitSchemeKeptForOldInstall() {
