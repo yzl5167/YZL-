@@ -149,6 +149,13 @@ struct YZLEngineHost: LauncherEngine {
         }
         try AmethystPreferences.apply(heapMB: plan.memoryMB, homeDirectory: home)
 
+        // 1.6 默认虚拟键位（FCL 同款）：引擎 main() 把 default.json 生成到它自己的
+        // AME_HOME，而紧接着我们要把 AME_HOME 换成 YZLEngineHome。若不在切换前把
+        // 布局复制到 YZLEngineHome/controlmap/，游戏里就不会有任何悬浮按键/摇杆。
+        // 已有布局（玩家自定义过）一律保留，绝不被覆盖。
+        let controlSource = AmethystPreferences.ensureDefaultControlLayout(homeDirectory: home)
+        YZLBootLog.write("launch control layout: \(controlSource)")
+
         // 2. 环境变量：AME_HOME（fork 主目录约定）与契约路径。
         setenv("AME_HOME", home.path, 1)
         setenv("YZL_LAUNCH_PLAN", home.appendingPathComponent("yzl-launch-plan.json").path, 1)
