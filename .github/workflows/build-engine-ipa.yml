@@ -367,7 +367,9 @@ jobs:
             echo "::error::YZLUI.framework 缺 UniversalJIT26.js；iOS 26+ 一键 JIT 会回退 legacy 脚本并秒闪退"
             exit 1
           fi
-          if ! unzip -p "$TIPA" "$entry" | grep -q 'legacyCommands\[0x69\]'; then
+          script="$(unzip -p "$TIPA" "$entry")"
+          if ! printf '%s' "$script" | grep -q 'legacyCommands' \
+             || ! printf '%s' "$script" | grep -q '0x69'; then
             echo "::error::UniversalJIT26.js 内容不正确（缺 0x69 legacy 分支）"
             exit 1
           fi

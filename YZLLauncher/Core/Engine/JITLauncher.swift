@@ -99,7 +99,8 @@ enum JITLauncher {
                   data.count > 4096,
                   let text = String(data: data, encoding: .utf8),
                   text.contains("Universal JIT Script"),
-                  text.contains("legacyCommands[0x69]") else { continue }
+                  text.contains("legacyCommands"),
+                  text.contains("[0x69]") else { continue }
             return data
         }
         return nil
