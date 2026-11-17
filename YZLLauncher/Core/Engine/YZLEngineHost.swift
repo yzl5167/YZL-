@@ -66,6 +66,16 @@ struct YZLEngineHost: LauncherEngine {
         self.classLookup = classLookup
     }
 
+    /// 机型标识（hw.machine，如 iPhone14,3 / iPad14,5）。写进启动日志，
+    /// 让「某个具体机型启动崩溃」的反馈能直接对上架构/内存档位，不必再猜。
+    static var deviceModel: String {
+        var size = 0
+        guard sysctlbyname("hw.machine", nil, &size, nil, 0) == 0, size > 0 else { return "unknown" }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.machine", &buffer, &size, nil, 0) == 0 else { return "unknown" }
+        return String(cString: buffer)
+    }
+
     /// fork 进程内能在主程序里查到 `launchJVM` 才算桥接就绪。
     /// 只打一次诊断日志，方便真机抓 `[YZL]` 定位「提示没内核」的问题。
     private static var bridgeLogEmitted = false
@@ -136,6 +146,7 @@ struct YZLEngineHost: LauncherEngine {
         let document = try EngineLaunchContract.document(from: plan, accessToken: accessToken)
         try EngineLaunchContract.write(document, homeDirectory: home)
         YZLBootLog.write("launch contract written | javaMajor=\(document.javaMajor) mainClass=\(document.mainClass) cpEntries=\(document.classpath.count) gameArgs=\(document.gameArguments.count)")
+        YZLBootLog.write("launch device | model=\(Self.deviceModel) ios=\(ProcessInfo.processInfo.operatingSystemVersionString) physMB=\(DeviceCapabilities.physicalMemoryMB) procLimitMB=\(DeviceCapabilities.processMemoryLimitMB)")
 
         // 1.5 移动端适配 + 真实堆大小。
         // 这两步都必须在 JVM 起来之前完成：Amethyst 的 -Xmx 是在 launchJVM 里读偏好算的，
@@ -170,16 +181,32 @@ struct YZLEngineHost: LauncherEngine {
             YZLBootLog.write("WARN javaHome major=\(scannedMajor) != required=\(requiredMajor)（按实际 \(scannedMajor) 继续）")
         }
 
+        // JVM 参数与 launchTarget 必须在呈现画面**之前**备好。
+        // jvm_processed 是 Amethyst 唯一开放给我们追加 JVM 参数的入口（拼在它自己的
+        // -Xmx 之后，最后一条生效）。堆与 GC 由 EngineJVMArguments 生成；
+        // 版本设置页「额外 JVM 参数」+ 皮肤站 authlib 参数经 sanitize 去掉路径类后一并转发
+        // （sanitize 会丢弃 -Djava.library.path / -cp / -jar，避免把 Windows natives 指给 iOS）。
+        let baseArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
+        let forwardedArguments = EngineJVMArguments.sanitized(from: plan.jvmArguments)
+        let jvmArguments = baseArguments + forwardedArguments
+        // 单一份完整 target，同时给 SurfaceViewController 的 metadata 和 launchJVM。
+        // 旧实现只给 surface 传了 {"javaVersion":...}，却让其 viewDidLoad 自动 launchMinecraft
+        // ——那条路径的 launchTarget 缺 id，[nil UTF8String] 把 NULL 塞进 JVM argv；
+        // 加上 YZL 自己又调一次 launchJVM，同一进程两次 JLI_Launch 直接原生崩溃。
+        // fork 补丁④已在有 YZL_LAUNCH_PLAN 时禁掉自动启动；这里再用完整字典兜底。
+        let target = EngineLaunchContract.launchTarget(
+            versionID: plan.version.id,
+            javaMajor: document.javaMajor,
+            jvmArguments: jvmArguments
+        )
+        let minJava = Int32(document.javaMajor)
+
         // 3. 呈现游戏画面（fork 的 SurfaceViewController，运行时 msgSend
         //    `initWithMetadata:`——真签名见 Natives/SurfaceViewController.m:66；
         //    随后按 Amethyst 桥 UIKit_launchMinecraftSurfaceVC 的模式替换
         //    keyWindow 根控制器）。必须在 JVM 启动之前完成。
-        let minJava = Int32(document.javaMajor)
-        let metadata: NSDictionary = [
-            "javaVersion": ["majorVersion": document.javaMajor]
-        ]
-        await presentGameSurface(metadata: metadata)
-        YZLBootLog.write("launch surface presented | minJava=\(minJava)")
+        await presentGameSurface(metadata: target)
+        YZLBootLog.write("launch surface presented | minJava=\(minJava) | targetKeys=\(target.allKeys.count)")
 
         // 4. launchJVM(username, launchTarget, width, height, minVersion)。
         //    JLI_Launch 阻塞当前线程直到游戏退出——必须离开主线程
@@ -189,23 +216,12 @@ struct YZLEngineHost: LauncherEngine {
         typealias LaunchJVM = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?, Int32, Int32, Int32) -> Int32
         let launch = unsafeBitCast(launchSymbol, to: LaunchJVM.self)
         let username = plan.accountName
-        // jvm_processed 是 Amethyst 唯一开放给我们追加 JVM 参数的入口（拼在它自己的
-        // -Xmx 之后，最后一条生效）。堆与 GC 由 EngineJVMArguments 生成；
-        // 版本设置页「额外 JVM 参数」+ 皮肤站 authlib 参数经 sanitize 去掉路径类后一并转发
-        // （sanitize 会丢弃 -Djava.library.path / -cp / -jar，避免把 Windows natives 指给 iOS）。
-        let baseArguments = EngineJVMArguments.build(heapMB: plan.memoryMB, javaMajor: document.javaMajor)
-        let forwardedArguments = EngineJVMArguments.sanitized(from: plan.jvmArguments)
-        let jvmArguments = baseArguments + forwardedArguments
         YZLBootLog.write("launch CALL launchJVM | jvmArgs=\(jvmArguments.joined(separator: " "))")
         YZLBootLog.write("launch JVM START (blocking) — 若下次日志停在这里，崩溃点在 JVM 内部")
 
         let exitCode: Int32 = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let nsName = username as NSString
-                let target: NSDictionary = [
-                    "id": plan.version.id,
-                    "arguments": ["jvm_processed": jvmArguments]
-                ]
                 let code = launch(
                     Unmanaged.passUnretained(nsName).toOpaque(),
                     Unmanaged.passUnretained(target).toOpaque(),

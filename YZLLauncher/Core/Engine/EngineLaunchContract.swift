@@ -97,6 +97,22 @@ enum EngineLaunchContract {
         )
     }
 
+    /// 交给原生 `launchJVM` 的 launchTarget 字典，同时用作 `SurfaceViewController`
+    /// 的 metadata。两条路径必须用**同一份完整字典**：
+    ///   · 原生 `SurfaceViewController.viewDidLoad` 会读 `metadata[@"javaVersion"]`
+    ///     并在 YZL 未接管时自动调 `launchJVM`；
+    ///   · `JavaLauncher.m` 又会读 `launchTarget[@"id"]` 和
+    ///     `launchTarget[@"arguments"][@"jvm_processed"]`。
+    /// 旧实现只传 `{"javaVersion":...}`，一旦引擎侧自动启动路径触发，`id` 为 nil，
+    /// `[nil UTF8String]` 得到 NULL 被塞进 JVM argv，是「一启动就闪退」的直接原因之一。
+    static func launchTarget(versionID: String, javaMajor: Int, jvmArguments: [String]) -> NSDictionary {
+        return [
+            "id": versionID,
+            "javaVersion": ["majorVersion": javaMajor],
+            "arguments": ["jvm_processed": jvmArguments]
+        ]
+    }
+
     /// 临时挂载点：Amethyst fork 用 AME_HOME 作为主目录；
     /// YZL 侧用 Documents/YZLEngineHome 承接（fork 构建时 ObjC 入口会把 AME_HOME 指到这里）。
     static var homeDirectory: URL {

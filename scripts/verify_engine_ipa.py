@@ -7,6 +7,10 @@
 
 检查项：
   * YZLUI.framework/YZLUI 必须是真实 Mach-O（不能是只有资源、没有二进制的空壳）
+  * 全架构门禁：引擎主二进制、YZLUI、以及每个 JRE 的 libjli/libjvm 都必须含
+    arm64 切片（CPU_TYPE_ARM64 = 0x0100000C）。所有 iPhone/iPad 都是 arm64/arm64e，
+    arm64e 能运行 arm64 二进制，因此单个 arm64 切片即覆盖**全部** iOS 机型；
+    纯 x86_64 / armv7 的二进制在任何真机上都会 SIGILL，必须拒绝出包。
   * JRE 8 / 17 / 21 必须真实可用（含 libjli.dylib 且体积达标），否则拒绝出包
     （2026-11-17 起 21 已有可用的 iOS 真源，1.21+ 版本依赖它，不能再缺）
   * JRE 25 缺席只告警并写入报告，不阻断（官方无 iOS 构建，当前为实验性转换）
@@ -33,6 +37,76 @@ PRIVATE_KEYS = (
     b"dynamic-codesigning",
 )
 LC_CODE_SIGNATURE = 0x1D
+
+# Mach-O cputype：arm64 覆盖全部在役 iOS 机型（A7 起的 arm64 与 A12 起的 arm64e，
+# arm64e 设备可正常运行 arm64 二进制）。x86_64 只存在于模拟器，真机会直接崩。
+CPU_TYPE_ARM64 = 0x0100000C
+CPU_TYPE_X86_64 = 0x01000007
+CPU_TYPE_ARM = 0x0000000C
+CPU_TYPE_I386 = 0x00000007
+CPU_ARCH_ABI64 = 0x01000000
+
+
+def macho_cpu_types(data):
+    """解析 Mach-O（thin 或 fat）里所有切片的 cputype，返回整数集合。
+
+    非 Mach-O 返回空集合。用于架构门禁：必须是 arm64，且不能是纯 x86_64/armv7。
+    """
+    types = set()
+    if len(data) < 8:
+        return types
+    magic = data[:4]
+    if magic in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"):  # FAT_MAGIC / FAT_CIGAM
+        nfat = struct.unpack(">I", data[4:8])[0]
+        stride = 32 if magic == b"\xca\xfe\xba\xbf" else 20
+        for index in range(min(nfat, 16)):
+            base = 8 + index * stride
+            if base + stride > len(data):
+                break
+            cputype = struct.unpack(">I", data[base:base + 4])[0]
+            types.add(cputype)
+        return types
+    if magic in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                 b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce"):
+        endian = "<" if magic in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe") else ">"
+        types.add(struct.unpack(endian + "I", data[4:8])[0])
+    return types
+
+
+def arch_report(types):
+    names = []
+    for t in sorted(types):
+        if t == CPU_TYPE_ARM64:
+            names.append("arm64")
+        elif t == CPU_TYPE_X86_64:
+            names.append("x86_64")
+        elif t == CPU_TYPE_ARM:
+            names.append("armv7")
+        elif t == CPU_TYPE_I386:
+            names.append("i386")
+        else:
+            names.append(hex(t))
+    return "/".join(names) if names else "非 Mach-O"
+
+
+def check_arm64(label, data, errors, note):
+    """单个 Mach-O 的架构门禁。返回 True 表示可做后续校验。"""
+    types = macho_cpu_types(data)
+    if not types:
+        errors.append(f"{label} 不是可解析的 Mach-O，无法确认架构")
+        note(f"FAIL {label} 架构解析失败")
+        return False
+    if CPU_TYPE_ARM64 not in types:
+        errors.append(
+            f"{label} 缺 arm64 切片（实际 {arch_report(types)}）——"
+            f"只有 arm64 能覆盖所有 iPhone/iPad，其它架构在真机会崩溃"
+        )
+        note(f"FAIL {label} 架构 {arch_report(types)}")
+        return False
+    # 允许 fat 里同时带模拟器切片（那是构建副产物，不影响真机），
+    # 但只要含 arm64 就满足全机型要求。
+    note(f"OK  {label} 架构 {arch_report(types)}（含 arm64，覆盖全部 iOS 机型）")
+    return True
 
 
 def macho_has_code_signature(data):
@@ -128,17 +202,29 @@ def main():
     if not ui_hit:
         errors.append("缺少 YZLUI.framework/YZLUI —— 真机只会看到 Amethyst 原生 UI")
     else:
-        head = z.read(ui_hit)[:8]
+        ui_bytes = z.read(ui_hit)
         size = by_name[ui_hit].file_size
-        if not any(head.startswith(m) for m in MACHO_MAGICS):
-            errors.append(f"YZLUI 不是 Mach-O（前 8 字节 {head.hex()}）")
+        if not any(ui_bytes[:8].startswith(m) for m in MACHO_MAGICS):
+            errors.append(f"YZLUI 不是 Mach-O（前 8 字节 {ui_bytes[:8].hex()}）")
         elif size < 10000:
             errors.append(f"YZLUI 只有 {size} 字节，疑似空壳")
         else:
             note(f"OK  YZLUI 二进制 {size} 字节，Mach-O")
+            check_arm64("YZLUI.framework/YZLUI", ui_bytes, errors, note)
 
-    # 2. JRE 完整性
+    # 1b. 引擎主二进制架构门禁（fork 的 Mach-O，全机型跑的就是它）
+    engine_hit = next(
+        (n for n in names if re.match(r"^" + re.escape(app_root) + r"/AngelAuraAmethyst$", n)),
+        None,
+    )
+    if not engine_hit:
+        errors.append("缺少引擎主二进制 AngelAuraAmethyst")
+    else:
+        check_arm64("AngelAuraAmethyst（引擎主二进制）", z.read(engine_hit), errors, note)
+
+    # 2. JRE 完整性 + 架构门禁
     jre = defaultdict(lambda: {"count": 0, "bytes": 0, "jli": 0})
+    jre_macho = {}  # ver -> [(label, bytes), ...]
     for info in infos:
         m = re.search(r"java_runtimes/(java-(\d+)-openjdk)/", info.filename)
         if not m:
@@ -150,6 +236,16 @@ def main():
         # 不能写死目录，否则会把完整可用的 JRE 8 误判成空壳。
         if info.filename.endswith("/libjli.dylib"):
             jre[ver]["jli"] = max(jre[ver]["jli"], info.file_size)
+            jre_macho.setdefault(ver, []).append(
+                (f"JRE {ver} libjli.dylib", z.read(info.filename)))
+        if info.filename.endswith("/libjvm.dylib"):
+            jre_macho.setdefault(ver, []).append(
+                (f"JRE {ver} libjvm.dylib", z.read(info.filename)))
+
+    # 每个 JRE 的核心二进制都必须是 arm64，否则该版本一启动就 SIGILL。
+    for ver, machos in sorted(jre_macho.items(), key=lambda kv: int(kv[0])):
+        for label, data in machos:
+            check_arm64(label, data, errors, note)
 
     for ver in sorted(jre, key=int):
         d = jre[ver]

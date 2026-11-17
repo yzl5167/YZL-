@@ -268,4 +268,51 @@ else
   echo "[patch] WARN: Natives/SceneDelegate.m 不存在"
 fi
 
+# ---- YZL fork 补丁④：禁止 SurfaceViewController 自动二次 launchJVM ----
+# 根因（真机「启动游戏瞬间闪退」的决定性原因）：
+#   YZL 走自己的 launchJVM 路径，并且会先把 SurfaceViewController 设为
+#   rootViewController。上游 viewDidLoad 末尾无条件调用 [self launchMinecraft]，
+#   后者再调一次 launchJVM —— 同一个进程里发生两次 JLI_Launch。
+#   第一次用的 metadata 是 YZL 传的 {"javaVersion":...}，没有 id / jvm_processed，
+#   JavaLauncher.m 里 [launchTarget[@"id"] UTF8String] 得到 NULL，直接把空参数
+#   塞进 argv；两次 JVM 初始化必然 abort，且是原生崩溃，Swift try/catch 接不到。
+# YZL 启动前已 setenv("YZL_LAUNCH_PLAN", ...)，据此只保留 YZL 那一次 launch；
+# 原生 Amethyst 流程没有这个环境变量，行为完全不变（仍然自动启动）。
+SV="$AMETHYST_DIR/Natives/SurfaceViewController.m"
+if [ -f "$SV" ]; then
+  if grep -q "YZL_EXTERNAL_LAUNCH_GUARD" "$SV"; then
+    echo "[patch] SurfaceViewController.m 已禁自动 launch，跳过"
+  else
+    python3 - "$SV" <<'PY'
+import sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    src = f.read()
+needle = "    [self launchMinecraft];\n"
+if needle not in src:
+    sys.exit("viewDidLoad 里的 [self launchMinecraft] 未找到，上游结构变化，需人工核对")
+# getenv 需要 stdlib.h；上游头文件链未必带，显式补以免新 Xcode 报隐式声明。
+if "#include <stdlib.h>" not in src:
+    if '#include <dlfcn.h>' in src:
+        src = src.replace('#include <dlfcn.h>', '#include <stdlib.h>\n#include <dlfcn.h>', 1)
+    else:
+        src = src.replace('#import <AVFoundation/AVFoundation.h>',
+                          '#include <stdlib.h>\n#import <AVFoundation/AVFoundation.h>', 1)
+replacement = (
+    "    /* YZL_EXTERNAL_LAUNCH_GUARD: 外部启动器已自行调用 launchJVM，"
+    "禁止 viewDidLoad 二次 JLI_Launch 导致瞬间崩溃。原生流程无 YZL_LAUNCH_PLAN，行为不变。 */\n"
+    "    if (!getenv(\"YZL_LAUNCH_PLAN\")) {\n"
+    "        [self launchMinecraft];\n"
+    "    }\n"
+)
+src = src.replace(needle, replacement, 1)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(src)
+print("[patch] SurfaceViewController.m: 自动 launch 已按 YZL_LAUNCH_PLAN 收口")
+PY
+  fi
+else
+  echo "[patch] WARN: Natives/SurfaceViewController.m 不存在"
+fi
+
 echo "[patch] done"
