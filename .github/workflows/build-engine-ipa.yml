@@ -13,6 +13,10 @@ on:
     branches: [main]
     paths:
       - "YZLUI/**"
+      # YZLUI.framework 由 project.yml 把 YZLLauncher 源码一起编译进来，
+      # 启动器逻辑（如资源索引/安装准备）改动必须触发引擎重编，否则引擎包
+      # 内的 YZLUI 仍是旧代码，真机上的安装卡死无法被修复。
+      - "YZLLauncher/**"
       - "engine/**"
       - "project.yml"
       - ".github/workflows/build-engine-ipa.yml"

@@ -15,8 +15,19 @@ struct AssetIndexDocument: Decodable {
 /// `/v1/packages/...`（资源索引），官方源偶发抖动也会让一次失败直接中止整个
 /// 版本安装，用户看到的就是「资源索引获取失败」。现在任一条路能通就继续，
 /// 成功后写回本地缓存，重试安装时连这次请求都省掉。
+/// 资源索引获取结果：网络成功/失败，或硬看门狗到点。
+private enum AssetIndexFetchOutcome {
+    case success(Data, AssetIndexDocument)
+    case failure(String)
+    case watchdog
+}
+
 struct AssetIndexService {
     private static let attemptsPerSource = 2
+    /// 硬看门狗上限（秒）：无论 URLSession 底层怎么挂起，资源索引阶段最多等这些秒。
+    /// 真机上 waitsForConnectivity + DNS/TLS 卡死曾让这里无限等待，
+    /// 用户永远停在「正在统计安装清单」。超时后强制取消并给出明确错误。
+    static let hardTimeoutSeconds: Double = 20
 
     private let session: URLSession
 
@@ -25,9 +36,11 @@ struct AssetIndexService {
             self.session = session
         } else {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 20
-            config.timeoutIntervalForResource = 60
-            config.waitsForConnectivity = true
+            config.timeoutIntervalForRequest = 9
+            config.timeoutIntervalForResource = 22
+            // 关键：waitsForConnectivity=true 时，系统判定「无连接」会挂起请求，
+            // 期间 timeoutInterval 不计时 —— 真机上会永久卡住安装准备。
+            config.waitsForConnectivity = false
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.urlCache = nil
             config.httpAdditionalHeaders = ["User-Agent": "YZLLauncher/0.1 (iOS)"]
@@ -41,7 +54,8 @@ struct AssetIndexService {
     ///   - expectedSHA1: 可选，用于确认本地缓存就是同一份索引。
     func fetch(indexURL: URL,
                cacheURL: URL? = nil,
-               expectedSHA1: String? = nil) async throws -> AssetIndexDocument {
+               expectedSHA1: String? = nil,
+               hardTimeout: Double = AssetIndexService.hardTimeoutSeconds) async throws -> AssetIndexDocument {
         if let cacheURL, let cached = loadCache(at: cacheURL, expectedSHA1: expectedSHA1) {
             return cached
         }
@@ -52,22 +66,38 @@ struct AssetIndexService {
         var reasons: [String] = []
 
         // 镜像与官方同时起跑：索引只有一条路径能通时，用户也不必等前一条超时。
+        // 再加一个硬看门狗任务：即使两个源都被系统挂起（waitsForConnectivity /
+        // DNS / TLS 卡死），也会在上限时间强制结束，UI 一定能退出「统计清单」。
+        let budget = max(0.2, hardTimeout)
         let fetched: (Data, AssetIndexDocument)? = await withTaskGroup(
-            of: Result<(Data, AssetIndexDocument), Error>.self
+            of: AssetIndexFetchOutcome.self
         ) { group in
             for url in candidates {
                 group.addTask {
-                    await self.fetchWithRetry(url)
+                    switch await self.fetchWithRetry(url) {
+                    case .success(let pair):
+                        return .success(pair.0, pair.1)
+                    case .failure(let error):
+                        return .failure(error.localizedDescription)
+                    }
                 }
             }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
+                return .watchdog
+            }
 
-            while let result = await group.next() {
-                switch result {
-                case .success(let pair):
+            loop: while let outcome = await group.next() {
+                switch outcome {
+                case .success(let data, let document):
                     group.cancelAll()
-                    return pair
-                case .failure(let error):
-                    reasons.append(error.localizedDescription)
+                    return (data, document)
+                case .failure(let reason):
+                    reasons.append(reason)
+                case .watchdog:
+                    reasons.append("资源索引请求超过 \(Int(budget)) 秒未完成，已取消；请切换下载源后重试")
+                    group.cancelAll()
+                    break loop
                 }
             }
             return nil
@@ -86,6 +116,10 @@ struct AssetIndexService {
     private func fetchWithRetry(_ url: URL) async -> Result<(Data, AssetIndexDocument), Error> {
         var lastReason = "\(url.host ?? "未知源")：未知错误"
         for attempt in 1...Self.attemptsPerSource {
+            // 看门狗 cancelAll 后尽快退出，别在已取消的任务里继续重试。
+            if Task.isCancelled {
+                return .failure(VersionServiceError.assetIndexUnavailable("请求已取消"))
+            }
             do {
                 let pair = try await fetchOnce(url)
                 return .success(pair)
@@ -114,7 +148,7 @@ struct AssetIndexService {
 
     private func fetchOnce(_ url: URL) async throws -> (Data, AssetIndexDocument) {
         var request = URLRequest(url: url)
-        request.timeoutInterval = 20
+        request.timeoutInterval = 9
         request.setValue("YZLLauncher/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
