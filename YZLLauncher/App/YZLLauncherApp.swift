@@ -13,18 +13,30 @@ struct YZLLauncherApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
-                .preferredColorScheme(.light)
         }
     }
 
     private static func configureBars() {
-        let pageColor = UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
-        let textColor = UIColor(red: 0.145, green: 0.188, blue: 0.267, alpha: 1)
-        let borderColor = UIColor(red: 0.894, green: 0.914, blue: 0.949, alpha: 1)
+        // 用动态 UIColor：系统切深/浅时导航栏自动换色，避免写死白底黑字。
+        let pageColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.063, green: 0.082, blue: 0.122, alpha: 1)
+                : UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
+        }
+        let textColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.918, green: 0.937, blue: 0.965, alpha: 1)
+                : UIColor(red: 0.145, green: 0.188, blue: 0.267, alpha: 1)
+        }
+        let borderColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.180, green: 0.208, blue: 0.267, alpha: 1)
+                : UIColor(red: 0.894, green: 0.914, blue: 0.949, alpha: 1)
+        }
 
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
-        tab.backgroundColor = .white
+        tab.backgroundColor = pageColor
         tab.shadowColor = borderColor
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab

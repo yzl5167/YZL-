@@ -1,22 +1,105 @@
 import SwiftUI
 
+/// 主题色板。所有颜色都根据当前外观模式（浅/深）与用户选择的主题色动态计算，
+/// 因此全 App 的 `YZLTheme.xxx` 引用无需逐处改写即可支持深色模式与换色。
+///
+/// 深浅取值与跨端对齐：浅色沿用原版（#F4F6FB 页面 / 白卡片 / #3B82F6 蓝）；
+/// 深色取 YZL 跨端 `yzl_page_dark` = #10151F 一族。
 enum YZLTheme {
-    static let page = Color(red: 0.957, green: 0.965, blue: 0.984)
-    static let card = Color.white
-    static let field = Color(red: 0.973, green: 0.980, blue: 0.992)
-    static let text = Color(red: 0.145, green: 0.188, blue: 0.267)
-    static let muted = Color(red: 0.486, green: 0.541, blue: 0.627)
-    static let lightMuted = Color(red: 0.635, green: 0.682, blue: 0.753)
-    static let border = Color(red: 0.894, green: 0.914, blue: 0.949)
-    static let accent = Color(red: 0.231, green: 0.510, blue: 0.965)
-    static let accentDark = Color(red: 0.173, green: 0.435, blue: 0.878)
-    static let accentText = Color(red: 0.114, green: 0.298, blue: 0.620)
-    static let accentSoft = Color(red: 0.918, green: 0.949, blue: 1.0)
-    static let success = Color(red: 0.133, green: 0.773, blue: 0.369)
-    static let successSoft = Color(red: 0.914, green: 0.976, blue: 0.937)
-    static let danger = Color(red: 0.937, green: 0.267, blue: 0.267)
-    static let warningSoft = Color(red: 1.0, green: 0.957, blue: 0.898)
-    static let warningText = Color(red: 0.698, green: 0.416, blue: 0.0)
+    /// 是否深色。收口到 AppearanceStore 单例，静态属性也能拿到正确值。
+    private static var isDark: Bool { AppearanceStore.shared.isDarkEffective }
+    private static var accentChoice: AccentChoice { AppearanceStore.shared.accent }
+
+    // MARK: - 当前色板（动态）
+
+    static var page: Color {
+        isDark
+            ? Color(red: 0.063, green: 0.082, blue: 0.122)
+            : Color(red: 0.957, green: 0.965, blue: 0.984)
+    }
+
+    static var card: Color { isDark ? cardDark : Color.white }
+
+    static var field: Color {
+        isDark
+            ? Color(red: 0.149, green: 0.176, blue: 0.231)
+            : Color(red: 0.973, green: 0.980, blue: 0.992)
+    }
+
+    static var text: Color {
+        isDark
+            ? Color(red: 0.918, green: 0.937, blue: 0.965)
+            : Color(red: 0.145, green: 0.188, blue: 0.267)
+    }
+
+    static var muted: Color {
+        isDark
+            ? Color(red: 0.596, green: 0.651, blue: 0.733)
+            : Color(red: 0.486, green: 0.541, blue: 0.627)
+    }
+
+    static var lightMuted: Color {
+        isDark
+            ? Color(red: 0.470, green: 0.525, blue: 0.604)
+            : Color(red: 0.635, green: 0.682, blue: 0.753)
+    }
+
+    static var border: Color {
+        isDark
+            ? Color(red: 0.180, green: 0.208, blue: 0.267)
+            : Color(red: 0.894, green: 0.914, blue: 0.949)
+    }
+
+    /// 主色：跟随主题色选择，深色下用提亮版。
+    static var accent: Color {
+        let rgb = isDark ? accentChoice.accentDarkRGB : accentChoice.accentRGB
+        return Color(red: rgb.0, green: rgb.1, blue: rgb.2)
+    }
+
+    static var accentDark: Color {
+        let rgb = accentChoice.accentRGB
+        return Color(red: rgb.0 * 0.86, green: rgb.1 * 0.86, blue: rgb.2 * 0.88)
+    }
+
+    static var accentText: Color { accent }
+
+    static var accentSoft: Color {
+        isDark
+            ? accent.opacity(0.20)
+            : Color(red: 0.918, green: 0.949, blue: 1.0)
+    }
+
+    static var success: Color {
+        isDark
+            ? Color(red: 0.478, green: 0.850, blue: 0.565)
+            : Color(red: 0.133, green: 0.773, blue: 0.369)
+    }
+
+    static var successSoft: Color {
+        isDark
+            ? Color(red: 0.133, green: 0.773, blue: 0.369).opacity(0.20)
+            : Color(red: 0.914, green: 0.976, blue: 0.937)
+    }
+
+    static var danger: Color {
+        isDark
+            ? Color(red: 0.965, green: 0.400, blue: 0.400)
+            : Color(red: 0.937, green: 0.267, blue: 0.267)
+    }
+
+    static var warningSoft: Color {
+        isDark
+            ? Color(red: 1.0, green: 0.700, blue: 0.200).opacity(0.18)
+            : Color(red: 1.0, green: 0.957, blue: 0.898)
+    }
+
+    static var warningText: Color {
+        isDark
+            ? Color(red: 1.0, green: 0.780, blue: 0.400)
+            : Color(red: 0.698, green: 0.416, blue: 0.0)
+    }
+
+    // MARK: - 尺寸
 
     static let cardCorner: CGFloat = 14
     static let controlCorner: CGFloat = 8
@@ -31,7 +114,8 @@ enum YZLTheme {
         endPoint: .bottomTrailing
     )
 
-    /// 深色调（与 YZL 跨端 `yzl_page_dark` = #10151F 对齐）。
+    // MARK: - 深色基准常量（yzl_page_dark = #10151F 一族）
+
     static let pageDark = Color(red: 0.063, green: 0.082, blue: 0.122)
     static let cardDark = Color(red: 0.106, green: 0.129, blue: 0.180)
     static let textOnDark = Color(red: 0.918, green: 0.937, blue: 0.965)
@@ -39,9 +123,10 @@ enum YZLTheme {
     static let borderDark = Color(red: 0.180, green: 0.208, blue: 0.267)
     static let fieldDark = Color(red: 0.149, green: 0.176, blue: 0.231)
 
-    /// 深色下也保持品牌蓝，避免在暗背景上发灰。
+    /// 兼容旧调用：显式按 colorScheme 取主色。
     static func accent(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(red: 0.298, green: 0.561, blue: 0.965) : YZLTheme.accent
+        let rgb = colorScheme == .dark ? accentChoice.accentDarkRGB : accentChoice.accentRGB
+        return Color(red: rgb.0, green: rgb.1, blue: rgb.2)
     }
 
     /// bundle 感知的图标加载：独立 App 里图标在主 bundle；
@@ -49,14 +134,12 @@ enum YZLTheme {
     /// SwiftUI 的 Image(name) 只查主 bundle，所以 framework 命中时
     /// 先解析成 UIImage 再包装；两侧都未命中时退回主 bundle 查找（布局不塌）。
     static func icon(_ name: String) -> Image {
-        // 独立 App：资源在主 bundle；M2-b fork：外壳编进 YZLUI.framework。
         if let image = UIImage(named: name, in: Bundle(for: BundleToken.self), compatibleWith: nil) {
             return Image(uiImage: image)
         }
         if let image = UIImage(named: name, in: .main, compatibleWith: nil) {
             return Image(uiImage: image)
         }
-        // 两个 bundle 都没命中时给可见占位，避免图标静默空白难以排查。
         return Image(systemName: "photo")
     }
 }
@@ -149,7 +232,7 @@ struct StatusBadge: View {
         case .neutral: return YZLTheme.field
         case .success: return YZLTheme.successSoft
         case .warning: return YZLTheme.warningSoft
-        case .danger: return Color(red: 0.996, green: 0.925, blue: 0.925)
+        case .danger: return YZLTheme.danger.opacity(0.14)
         }
     }
 }

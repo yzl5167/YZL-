@@ -6,6 +6,7 @@ import UIKit
 enum AppTab: Hashable {
     case home
     case download
+    case resources
     case versions
     case skin
     case settings

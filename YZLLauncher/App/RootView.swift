@@ -2,6 +2,8 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -18,14 +20,21 @@ struct RootView: View {
                 overlayContent
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(appState.selectedTab == .home && appState.overlay == nil ? Color.white : YZLTheme.page)
+            .background(appState.selectedTab == .home && appState.overlay == nil ? YZLTheme.card : YZLTheme.page)
             .animation(.easeInOut(duration: 0.22), value: appState.overlay)
             .animation(.easeInOut(duration: 0.18), value: appState.selectedTab)
         }
         // 只让背景延伸到屏幕边缘；HStack 的内容仍留在安全区内，
         // 避免横屏下刘海侧的图标被遮住。
         .background(YZLTheme.page.ignoresSafeArea())
-        .preferredColorScheme(.light)
+        // 外观：跟随用户选择；styleVersion 变化时重建整棵树，让静态颜色重新计算。
+        .id(appearance.styleVersion)
+        .preferredColorScheme(appearance.preferredColorScheme)
+        // 跟随系统模式下把系统外观回写进 AppearanceStore，供 YZLTheme 读取。
+        .onAppear { appearance.syncSystemScheme(colorScheme == .dark) }
+        .onChange(of: colorScheme) { newScheme in
+            appearance.syncSystemScheme(newScheme == .dark)
+        }
         .sheet(isPresented: $appState.isLaunchSheetVisible, onDismiss: {
             if appState.launchPhase != .running {
                 appState.launchPhase = .idle
@@ -50,6 +59,8 @@ struct RootView: View {
             HomeView()
         case .download:
             DownloadView()
+        case .resources:
+            ResourceMarketView()
         case .versions:
             VersionsView()
         case .skin:
@@ -99,10 +110,11 @@ private struct YZLSidebar: View {
                     .padding(.top, compact ? 6 : 14)
                     .padding(.bottom, compact ? 6 : 14)
 
-                // 5 个 tab 固定排布、不可滚动（紧凑模式收紧行高，小屏横屏也放得下）。
-                VStack(spacing: compact ? 1 : 4) {
+                // 6 个 tab 固定排布、不可滚动（紧凑模式收紧行高，小屏横屏也放得下）。
+                VStack(spacing: compact ? 0 : 2) {
                     railButton(icon: "house.fill", label: "首页", tab: .home, compact: compact)
                     railButton(icon: "arrow.down.circle.fill", label: "下载", tab: .download, compact: compact)
+                    railButton(icon: "square.grid.2x2.fill", label: "资源", tab: .resources, compact: compact)
                     railButton(icon: "square.stack.3d.up.fill", label: "版本", tab: .versions, compact: compact)
                     railButton(icon: "person.circle.fill", label: "皮肤", tab: .skin, compact: compact)
                     railButton(icon: "gearshape.fill", label: "设置", tab: .settings, compact: compact)
@@ -121,8 +133,8 @@ private struct YZLSidebar: View {
         }
         .frame(width: 84)
         // 固定横屏时 safe area 主要落在 leading/trailing（刘海侧）与 bottom，
-        // 只忽略 top/bottom 会让白色侧栏铺不到左右边缘，露出一条底色。
-        .background(Color.white.ignoresSafeArea())
+        // 只忽略 top/bottom 会让侧栏铺不到左右边缘，露出一条底色。
+        .background(YZLTheme.card.ignoresSafeArea())
     }
 
     private func brand(compact: Bool) -> some View {
@@ -154,7 +166,7 @@ private struct YZLSidebar: View {
             }
             .foregroundStyle(selected ? YZLTheme.accent : YZLTheme.muted)
             .frame(width: 64)
-            .padding(.vertical, compact ? 2 : 5)
+            .padding(.vertical, compact ? 0 : 4)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(selected ? YZLTheme.accentSoft : Color.clear)
@@ -226,7 +238,7 @@ struct OverlayHeader: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)

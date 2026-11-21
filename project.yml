@@ -45,7 +45,9 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
-        UIUserInterfaceStyle: Light
+        # 外观交给 SwiftUI 的 preferredColorScheme 控制（跟随系统/浅/深），
+        # 这里必须 Unspecified，写死 Light 会压过用户的深色选择。
+        UIUserInterfaceStyle: Unspecified
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false

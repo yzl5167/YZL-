@@ -24,7 +24,9 @@ struct SettingsView: View {
     @State private var sourceProbeResults: [SourceProbeOutcome] = []
     @State private var showClearCacheConfirm = false
     @State private var showJavaEnvironment = false
+    @State private var showRepair = false
     @State private var cacheStatus: String?
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some View {
         ZStack {
@@ -33,6 +35,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     accountCard
+                    appearanceCard
                     launchCard
                     javaCard
                     compatCard
@@ -57,6 +60,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showJavaEnvironment) {
             JavaEnvironmentView().environmentObject(appState)
+        }
+        .sheet(isPresented: $showRepair) {
+            RepairView().environmentObject(appState)
         }
     }
 
@@ -266,6 +272,75 @@ struct SettingsView: View {
         }
     }
 
+    /// 外观：对齐 Windows 端「个性化 → 模式/主题色」与 Android 端 ThemeMode + AccentOptions。
+    /// 深色模式让全局色板随 ColorScheme 动态切换；主题色改 YZLTheme.accent 一族。
+    private var appearanceCard: some View {
+        YZLCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("外观")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(YZLTheme.text)
+
+                Text("显示模式")
+                    .font(.system(size: 12))
+                    .foregroundStyle(YZLTheme.muted)
+
+                Picker("显示模式", selection: $appearance.mode) {
+                    ForEach(AppearanceMode.allCases) { m in
+                        Text(m.title).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: appearance.mode) { newMode in
+                    appearance.setMode(newMode)
+                }
+
+                Text("主题色")
+                    .font(.system(size: 12))
+                    .foregroundStyle(YZLTheme.muted)
+                    .padding(.top, 2)
+
+                HStack(spacing: 12) {
+                    ForEach(AccentChoice.allCases) { choice in
+                        let selected = appearance.accent == choice
+                        Button {
+                            appearance.setAccent(choice)
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(
+                                        red: choice.accentRGB.0,
+                                        green: choice.accentRGB.1,
+                                        blue: choice.accentRGB.2
+                                    ))
+                                    .frame(width: 30, height: 30)
+                                if selected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .overlay(
+                                Circle()
+                                    .stroke(selected ? YZLTheme.text : Color.clear, lineWidth: 2)
+                                    .frame(width: 38, height: 38)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(choice.title)
+                    }
+                    Spacer()
+                }
+                .frame(height: 40)
+
+                Text("跟随系统会在系统切深/浅时自动变化；主题色会应用到主按钮、强调文字与选中态。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(YZLTheme.muted)
+                    .lineSpacing(3)
+            }
+        }
+    }
+
     private var launchCard: some View {
         YZLCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -419,6 +494,17 @@ struct SettingsView: View {
                     .foregroundStyle(YZLTheme.muted)
                     .lineSpacing(3)
                     .padding(.top, 2)
+
+                Button {
+                    showRepair = true
+                } label: {
+                    HStack {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                        Text("打开修复助手")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle(prominent: false))
+                .padding(.top, 4)
             }
         }
     }

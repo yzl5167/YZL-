@@ -59,6 +59,24 @@ enum YZLBootLog {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
+    /// 读取当前日志全文（控制台页用）。读不到返回空串，不抛错。
+    static func readText() -> String {
+        guard let data = try? Data(contentsOf: fileURL) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// 日志字节数（诊断页展示）。
+    static var byteCount: Int64 {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let size = attrs[.size] as? NSNumber else { return 0 }
+        return size.int64Value
+    }
+
+    /// 追加一条分隔线，便于在控制台里区分多次诊断。
+    static func separator(_ label: String) {
+        write("—— \(label) ——")
+    }
+
     private static var sequence: Int = 0
 
     private static func stamp() -> String {
