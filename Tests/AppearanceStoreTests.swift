@@ -38,4 +38,43 @@ final class AppearanceStoreTests: XCTestCase {
         XCTAssertEqual(AccentChoice.lava.title, "熔岩")
         XCTAssertEqual(AccentChoice.sakura.title, "樱花")
     }
+
+    /// 三态判定：强制模式直接返回，跟随系统读 systemIsDark。测后恢复原值避免污染。
+    func testIsDarkEffectiveFollowsMode() {
+        let store = AppearanceStore.shared
+        let savedMode = store.mode
+        let savedDark = store.systemIsDark
+        defer {
+            store.mode = savedMode
+            store.syncSystemScheme(savedDark)
+        }
+
+        store.setMode(.light)
+        XCTAssertFalse(store.isDarkEffective)
+        store.setMode(.dark)
+        XCTAssertTrue(store.isDarkEffective)
+        store.syncSystemScheme(true)
+        store.setMode(.system)
+        XCTAssertTrue(store.isDarkEffective, "跟随系统应取 systemIsDark")
+        store.syncSystemScheme(false)
+        XCTAssertFalse(store.isDarkEffective)
+    }
+
+    /// 强制模式下系统外观变化不应改变 isDarkEffective，但 systemIsDark 仍要更新，
+    /// 这样切回"跟随系统"能立刻拿到最新值。
+    func testSystemSchemeTrackedEvenInForcedMode() {
+        let store = AppearanceStore.shared
+        let savedMode = store.mode
+        let savedDark = store.systemIsDark
+        defer {
+            store.mode = savedMode
+            store.syncSystemScheme(savedDark)
+        }
+
+        store.setMode(.light)
+        store.syncSystemScheme(true)
+        XCTAssertFalse(store.isDarkEffective, "强制浅色不受系统深色影响")
+        store.setMode(.system)
+        XCTAssertTrue(store.isDarkEffective, "切回跟随系统应立即用刚记录的系统深色")
+    }
 }

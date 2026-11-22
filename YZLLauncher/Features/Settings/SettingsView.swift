@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var showClearCacheConfirm = false
     @State private var showJavaEnvironment = false
     @State private var showRepair = false
+    @State private var showConsole = false
     @State private var cacheStatus: String?
     @ObservedObject private var appearance = AppearanceStore.shared
 
@@ -63,6 +64,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showRepair) {
             RepairView().environmentObject(appState)
+        }
+        .sheet(isPresented: $showConsole) {
+            ConsoleView(initialSource: .boot)
         }
     }
 
@@ -285,15 +289,17 @@ struct SettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(YZLTheme.muted)
 
-                Picker("显示模式", selection: $appearance.mode) {
+                // 绑定走 setMode 单一入口：确保 bumpStyle 触发、界面即时刷新，
+                // 且不与 @AppStorage 直写叠加造成双重写入/竞态。
+                Picker("显示模式", selection: Binding(
+                    get: { appearance.mode },
+                    set: { appearance.setMode($0) }
+                )) {
                     ForEach(AppearanceMode.allCases) { m in
                         Text(m.title).tag(m)
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: appearance.mode) { newMode in
-                    appearance.setMode(newMode)
-                }
 
                 Text("主题色")
                     .font(.system(size: 12))
@@ -317,7 +323,7 @@ struct SettingsView: View {
                                 if selected {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 14, weight: .bold))
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(YZLTheme.onAccent)
                                 }
                             }
                             .overlay(
@@ -495,15 +501,27 @@ struct SettingsView: View {
                     .lineSpacing(3)
                     .padding(.top, 2)
 
-                Button {
-                    showRepair = true
-                } label: {
-                    HStack {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                        Text("打开修复助手")
+                HStack(spacing: 8) {
+                    Button {
+                        showRepair = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                            Text("修复助手")
+                        }
                     }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+
+                    Button {
+                        showConsole = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                            Text("日志")
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
                 }
-                .buttonStyle(PrimaryButtonStyle(prominent: false))
                 .padding(.top, 4)
             }
         }

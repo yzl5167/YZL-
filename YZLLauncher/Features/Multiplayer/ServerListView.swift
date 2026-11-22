@@ -100,7 +100,7 @@ struct ServerListView: View {
                     } label: {
                         Text("加入")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(YZLTheme.onAccent)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
                             .background(

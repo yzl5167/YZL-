@@ -118,4 +118,49 @@ final class ResourceMarketTests: XCTestCase {
         XCTAssertEqual(ResourceCategory.resourcepack.targetSubdirectory, "resourcepacks")
         XCTAssertNil(ResourceCategory.modpack.targetSubdirectory)
     }
+
+    /// exact 只看 MC 版本是否精确命中——这是避免装错版本导致游戏崩溃的信号，
+    /// 不能因为加载器缺失就谎报兼容。
+    func testPickBestExactRequiresGameVersionMatch() throws {
+        let versions = try JSONDecoder().decode(
+            [ModrinthVersion].self, from: Data(versionsJSON.utf8)
+        )
+        let wrongGame = ModrinthService.pickBest(
+            versions, gameVersion: "1.20.1", loader: "fabric"
+        )
+        let picked = try XCTUnwrap(wrongGame)
+        XCTAssertFalse(picked.exact, "MC 版本不匹配时 exact 必须为 false")
+
+        let noGame = try XCTUnwrap(ModrinthService.pickBest(versions, gameVersion: nil, loader: nil))
+        XCTAssertFalse(noGame.exact, "未指定 MC 版本时不能谎报 exact")
+    }
+
+    func testPickBestEmptyVersions() {
+        XCTAssertNil(ModrinthService.pickBest([], gameVersion: "1.20.1", loader: "fabric"))
+    }
+
+    /// primary 是 Bool?，闭包谓词必须显式 == true（曾因此编译失败）。
+    /// 无 primary 文件时应退回第一个文件，全部为空时返回 nil。
+    func testPrimaryFileFallbackWhenNoPrimary() throws {
+        let json = """
+        [{"id":"v","project_id":"p","name":"n","version_number":"1",
+          "game_versions":["1.20.1"],"loaders":["fabric"],
+          "files":[
+            {"hashes":null,"url":"https://a/first.jar","filename":"first.jar","primary":null,"size":1},
+            {"hashes":null,"url":"https://a/second.jar","filename":"second.jar","primary":false,"size":2}
+          ],"dependencies":[]}]
+        """
+        let versions = try JSONDecoder().decode([ModrinthVersion].self, from: Data(json.utf8))
+        // 没有 primary=true，回退到第一个（而不是因为 Bool? 判断失败返回 nil）。
+        XCTAssertEqual(versions.first?.primaryFile?.filename, "first.jar")
+    }
+
+    func testPrimaryFileNilWhenNoFiles() throws {
+        let json = """
+        [{"id":"v","project_id":"p","name":"n","version_number":"1",
+          "game_versions":["1.20.1"],"loaders":["fabric"],"files":[],"dependencies":[]}]
+        """
+        let versions = try JSONDecoder().decode([ModrinthVersion].self, from: Data(json.utf8))
+        XCTAssertNil(versions.first?.primaryFile)
+    }
 }

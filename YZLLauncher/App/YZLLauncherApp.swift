@@ -6,6 +6,10 @@ struct YZLLauncherApp: App {
     @StateObject private var appState = AppState()
 
     init() {
+        YZLBootLog.resetForNewSessionIfNeeded()
+        AppearanceStore.shared.syncSystemScheme(
+            UITraitCollection.current.userInterfaceStyle == .dark
+        )
         Self.configureBars()
     }
 
@@ -17,39 +21,8 @@ struct YZLLauncherApp: App {
     }
 
     private static func configureBars() {
-        // 用动态 UIColor：系统切深/浅时导航栏自动换色，避免写死白底黑字。
-        let pageColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.063, green: 0.082, blue: 0.122, alpha: 1)
-                : UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
-        }
-        let textColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.918, green: 0.937, blue: 0.965, alpha: 1)
-                : UIColor(red: 0.145, green: 0.188, blue: 0.267, alpha: 1)
-        }
-        let borderColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.180, green: 0.208, blue: 0.267, alpha: 1)
-                : UIColor(red: 0.894, green: 0.914, blue: 0.949, alpha: 1)
-        }
-
-        let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = pageColor
-        tab.shadowColor = borderColor
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-
-        let nav = UINavigationBarAppearance()
-        nav.configureWithOpaqueBackground()
-        nav.backgroundColor = pageColor
-        nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: textColor]
-        nav.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-        UINavigationBar.appearance().compactAppearance = nav
+        // 导航栏/标签栏动态配色与 fork 宿主共用同一份实现，避免深浅不一致。
+        AppearanceStore.configureBars()
 
         // iOS 15 没有 scrollContentBackground(.hidden)：InsetGroupedListStyle 的
         // tableView 会保留系统灰底，光靠 listRowBackground 刷白行会留下灰色间隙。

@@ -13,29 +13,21 @@ enum YZLTheme {
     // MARK: - 当前色板（动态）
 
     static var page: Color {
-        isDark
-            ? Color(red: 0.063, green: 0.082, blue: 0.122)
-            : Color(red: 0.957, green: 0.965, blue: 0.984)
+        isDark ? pageDark : Color(red: 0.957, green: 0.965, blue: 0.984)
     }
 
     static var card: Color { isDark ? cardDark : Color.white }
 
     static var field: Color {
-        isDark
-            ? Color(red: 0.149, green: 0.176, blue: 0.231)
-            : Color(red: 0.973, green: 0.980, blue: 0.992)
+        isDark ? fieldDark : Color(red: 0.973, green: 0.980, blue: 0.992)
     }
 
     static var text: Color {
-        isDark
-            ? Color(red: 0.918, green: 0.937, blue: 0.965)
-            : Color(red: 0.145, green: 0.188, blue: 0.267)
+        isDark ? textOnDark : Color(red: 0.145, green: 0.188, blue: 0.267)
     }
 
     static var muted: Color {
-        isDark
-            ? Color(red: 0.596, green: 0.651, blue: 0.733)
-            : Color(red: 0.486, green: 0.541, blue: 0.627)
+        isDark ? mutedOnDark : Color(red: 0.486, green: 0.541, blue: 0.627)
     }
 
     static var lightMuted: Color {
@@ -45,9 +37,7 @@ enum YZLTheme {
     }
 
     static var border: Color {
-        isDark
-            ? Color(red: 0.180, green: 0.208, blue: 0.267)
-            : Color(red: 0.894, green: 0.914, blue: 0.949)
+        isDark ? borderDark : Color(red: 0.894, green: 0.914, blue: 0.949)
     }
 
     /// 主色：跟随主题色选择，深色下用提亮版。
@@ -56,17 +46,23 @@ enum YZLTheme {
         return Color(red: rgb.0, green: rgb.1, blue: rgb.2)
     }
 
-    static var accentDark: Color {
-        let rgb = accentChoice.accentRGB
-        return Color(red: rgb.0 * 0.86, green: rgb.1 * 0.86, blue: rgb.2 * 0.88)
-    }
+    /// 与 accent 同源（保留旧调用兼容），深色下同样提亮。
+    static var accentDark: Color { accent }
 
     static var accentText: Color { accent }
 
+    /// 主色的浅底：跟随主题色（用 accent.opacity），换草方块/熔岩/樱花时不会残留蓝底。
     static var accentSoft: Color {
-        isDark
-            ? accent.opacity(0.20)
-            : Color(red: 0.918, green: 0.949, blue: 1.0)
+        isDark ? accent.opacity(0.20) : accent.opacity(0.12)
+    }
+
+    /// 叠在主色上的前景色：按主色亮度自动选深/浅，保证对比度 ≥ WCAG AA。
+    static var onAccent: Color {
+        let rgb = isDark ? accentChoice.accentDarkRGB : accentChoice.accentRGB
+        let luminance = 0.2126 * rgb.0 + 0.7152 * rgb.1 + 0.0722 * rgb.2
+        return luminance > 0.62
+            ? Color(red: 0.063, green: 0.082, blue: 0.122)
+            : Color.white
     }
 
     static var success: Color {
@@ -85,6 +81,11 @@ enum YZLTheme {
         isDark
             ? Color(red: 0.965, green: 0.400, blue: 0.400)
             : Color(red: 0.937, green: 0.267, blue: 0.267)
+    }
+
+    /// 错误的浅底：深色用透明度自适应，不再写死浅粉以免暗背景刺眼。
+    static var dangerSoft: Color {
+        isDark ? danger.opacity(0.18) : Color(red: 0.996, green: 0.925, blue: 0.925)
     }
 
     static var warningSoft: Color {
@@ -232,7 +233,7 @@ struct StatusBadge: View {
         case .neutral: return YZLTheme.field
         case .success: return YZLTheme.successSoft
         case .warning: return YZLTheme.warningSoft
-        case .danger: return YZLTheme.danger.opacity(0.14)
+        case .danger: return YZLTheme.dangerSoft
         }
     }
 }
@@ -244,7 +245,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: large ? 16 : 14, weight: .semibold))
-            .foregroundStyle(prominent ? Color.white : YZLTheme.accentText)
+            .foregroundStyle(prominent ? YZLTheme.onAccent : YZLTheme.accentText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, large ? 16 : 11)
             .background(

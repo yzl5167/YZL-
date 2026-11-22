@@ -82,26 +82,28 @@ enum AccentChoice: String, CaseIterable, Identifiable {
 
 /// 全局外观设置（单例）。
 ///
-/// 设计要点：`YZLTheme` 里的颜色是静态计算属性，拿不到 SwiftUI 的 `@Environment`。
-/// 因此把所有"当前是否深色"的判断收口到本单例的 `isDarkEffective`：
+/// `YZLTheme` 的颜色是静态计算属性，拿不到 SwiftUI 的 `@Environment`，
+/// 因此"当前是否深色"统一收口到本单例的 `isDarkEffective`：
 /// - 强制浅/深：直接返回；
-/// - 跟随系统：读 `UITraitCollection.current.userInterfaceStyle`，
-///   系统外观变化时由 App 的 `deviceScheme` 回调刷新。
-/// 切换模式/主题色时 `objectWillChange.send()` + `styleVersion += 1`，
-/// RootView 用 `.id(styleVersion)` 重建整棵树，让所有静态颜色重新计算。
+/// - 跟随系统：读 `systemIsDark`，由 App / fork 宿主启动与 `colorScheme` 变化时回写。
+/// 切换模式/主题色时 `styleVersion += 1`（@Published 自动发 objectWillChange），
+/// RootView 只把 `.id(styleVersion)` 挂在内容区，让静态颜色重算但不销毁侧栏/弹层状态。
 final class AppearanceStore: ObservableObject {
     static let shared = AppearanceStore()
 
     @AppStorage("yzl.appearance.mode") var mode: AppearanceMode = .system
     @AppStorage("yzl.appearance.accent") var accent: AccentChoice = .blue
 
-    /// 视图树版本号：外观变化后 +1，强制重建根视图。
+    /// 内容区视图版本号：外观变化后 +1，强制重算 YZLTheme 静态颜色。
     @Published private(set) var styleVersion: Int = 0
 
-    /// 系统当前外观（跟随系统模式时用）。由 RootView 的 @Environment 回写。
+    /// 系统当前外观。由宿主在启动与 trait 变化时回写（跟随系统模式用）。
     @Published private(set) var systemIsDark: Bool = false
 
-    private init() {}
+    private init() {
+        // 冷启动即用当前系统 trait 初始化，避免"跟随系统 + 系统深色"首帧闪白。
+        systemIsDark = UITraitCollection.current.userInterfaceStyle == .dark
+    }
 
     var preferredColorScheme: ColorScheme? { mode.preferredColorScheme }
 
@@ -115,24 +117,65 @@ final class AppearanceStore: ObservableObject {
     }
 
     func setMode(_ newMode: AppearanceMode) {
+        guard mode != newMode else { return }
         mode = newMode
         bumpStyle()
     }
 
     func setAccent(_ newAccent: AccentChoice) {
+        guard accent != newAccent else { return }
         accent = newAccent
         bumpStyle()
     }
 
-    /// 由 RootView 在 @Environment(\.colorScheme) 变化时调用，仅跟随系统模式需要。
+    /// 系统外观变化时调用。无条件更新 systemIsDark（是否影响界面由 isDarkEffective 按 mode 决定），
+    /// 这样从"强制模式"切回"跟随系统"时能立刻拿到最新系统外观。
     func syncSystemScheme(_ isDark: Bool) {
-        guard mode == .system, systemIsDark != isDark else { return }
+        guard systemIsDark != isDark else { return }
         systemIsDark = isDark
-        bumpStyle()
+        if mode == .system { bumpStyle() }
     }
 
     private func bumpStyle() {
+        // @Published 会自动发 objectWillChange，不再手动 send，避免双发。
         styleVersion += 1
-        objectWillChange.send()
+    }
+
+    // MARK: - 系统栏外观（独立 App 与 fork 宿主共用）
+
+    /// 动态 UIColor：系统切深/浅时导航栏自动换色。两处入口共用，避免深浅不一致。
+    static func configureBars() {
+        let pageColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.063, green: 0.082, blue: 0.122, alpha: 1)
+                : UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
+        }
+        let textColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.918, green: 0.937, blue: 0.965, alpha: 1)
+                : UIColor(red: 0.145, green: 0.188, blue: 0.267, alpha: 1)
+        }
+        let borderColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.180, green: 0.208, blue: 0.267, alpha: 1)
+                : UIColor(red: 0.894, green: 0.914, blue: 0.949, alpha: 1)
+        }
+
+        let tab = UITabBarAppearance()
+        tab.configureWithOpaqueBackground()
+        tab.backgroundColor = pageColor
+        tab.shadowColor = borderColor
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
+
+        let nav = UINavigationBarAppearance()
+        nav.configureWithOpaqueBackground()
+        nav.backgroundColor = pageColor
+        nav.shadowColor = .clear
+        nav.titleTextAttributes = [.foregroundColor: textColor]
+        nav.largeTitleTextAttributes = [.foregroundColor: textColor]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
     }
 }

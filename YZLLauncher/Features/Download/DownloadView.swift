@@ -57,7 +57,7 @@ struct DownloadView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(YZLTheme.muted)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
@@ -121,7 +121,7 @@ struct DownloadView: View {
                 .padding(.vertical, 7)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(selected ? YZLTheme.accentSoft : Color.white)
+                        .fill(selected ? YZLTheme.accentSoft : YZLTheme.card)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -257,7 +257,7 @@ private struct DownloadVersionCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.white)
+                .fill(YZLTheme.card)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -448,7 +448,7 @@ private struct DownloadSheet: View {
         } label: {
             HStack(spacing: 8) {
                 if isPreparing {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(YZLTheme.onAccent)
                 }
                 Text(buttonTitle)
             }

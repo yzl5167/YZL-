@@ -27,8 +27,8 @@ struct RootView: View {
         // 只让背景延伸到屏幕边缘；HStack 的内容仍留在安全区内，
         // 避免横屏下刘海侧的图标被遮住。
         .background(YZLTheme.page.ignoresSafeArea())
-        // 外观：跟随用户选择；styleVersion 变化时重建整棵树，让静态颜色重新计算。
-        .id(appearance.styleVersion)
+        // 外观：appearance 是 @ObservedObject，styleVersion 变化会触发本视图整体重绘，
+        // YZLTheme 静态色随即重算——不需要 .id() 重建整棵树（那会丢失子视图 @State）。
         .preferredColorScheme(appearance.preferredColorScheme)
         // 跟随系统模式下把系统外观回写进 AppearanceStore，供 YZLTheme 读取。
         .onAppear { appearance.syncSystemScheme(colorScheme == .dark) }
@@ -97,6 +97,7 @@ struct RootView: View {
 
 private struct YZLSidebar: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var appearance = AppearanceStore.shared
 
     var body: some View {
         GeometryReader { proxy in

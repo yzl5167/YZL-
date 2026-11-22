@@ -64,7 +64,7 @@ struct AccountView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(YZLTheme.text)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
@@ -181,7 +181,7 @@ struct AccountView: View {
                         .frame(width: 78, height: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color(red: 0.996, green: 0.925, blue: 0.925))
+                                .fill(YZLTheme.dangerSoft)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -194,7 +194,7 @@ struct AccountView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white)
+                .fill(YZLTheme.card)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -458,7 +458,7 @@ private struct LoginSheet: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(YZLTheme.muted)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)

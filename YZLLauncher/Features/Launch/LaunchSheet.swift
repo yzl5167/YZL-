@@ -60,7 +60,7 @@ struct LaunchSheet: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(YZLTheme.muted)
                     .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .overlay(Circle().stroke(YZLTheme.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
@@ -133,7 +133,7 @@ struct LaunchSheet: View {
                 title: appState.displayAccount == nil ? "需要先选择账号" : "启动条件未满足",
                 message: appState.launchErrorMessage ?? message,
                 tint: YZLTheme.danger,
-                background: Color(red: 0.996, green: 0.925, blue: 0.925)
+                background: YZLTheme.dangerSoft
             )
         }
     }

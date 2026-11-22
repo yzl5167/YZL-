@@ -18,6 +18,8 @@ public final class YZLUIRootController: UIViewController {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
+        // fork 进程冷启动重开日志（独立 App 进程各自有一份，互不影响）。
+        YZLBootLog.resetForNewSessionIfNeeded()
         Self.configureBars()
 
         // 真机定位用：走到这一行说明「框架已 dlopen 成功 + ObjC 类已注册」。
@@ -25,11 +27,19 @@ public final class YZLUIRootController: UIViewController {
         // 有这行黑屏则是 SwiftUI 宿主本身的问题，两种方向完全不同。
         YZLBootLog.write("YZLUIRootController.viewDidLoad: 宿主=\(Bundle.main.bundleURL.lastPathComponent) 系统=\(ProcessInfo.processInfo.operatingSystemVersionString)")
 
+        // 同步系统外观给 AppearanceStore（跟随系统模式用）；不再强制 .light，
+        // 让用户选的深色模式在 fork 注入版里同样生效。
+        AppearanceStore.shared.syncSystemScheme(
+            UITraitCollection.current.userInterfaceStyle == .dark
+        )
         let root = RootView()
             .environmentObject(appState)
-            .preferredColorScheme(.light)
         let hosting = UIHostingController(rootView: AnyView(root))
-        hosting.view.backgroundColor = UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
+        hosting.view.backgroundColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.063, green: 0.082, blue: 0.122, alpha: 1)
+                : UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
+        }
 
         addChild(hosting)
         view.addSubview(hosting.view)
@@ -55,28 +65,9 @@ public final class YZLUIRootController: UIViewController {
         .landscape
     }
 
-    /// 沿用独立 App 的外观配置（与 YZLLauncherApp.configureBars 等价；
-    /// 复制而非引用，因为 @main 入口文件不进 framework target）。
+    /// 复用独立 App 的公共外观配置（动态 UIColor，深浅一致）。
+    /// 该方法在 AppearanceStore（framework target 内）而非 @main 入口里，故可直接引用。
     private static func configureBars() {
-        let pageColor = UIColor(red: 0.957, green: 0.965, blue: 0.984, alpha: 1)
-        let textColor = UIColor(red: 0.145, green: 0.188, blue: 0.267, alpha: 1)
-        let borderColor = UIColor(red: 0.894, green: 0.914, blue: 0.949, alpha: 1)
-
-        let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = .white
-        tab.shadowColor = borderColor
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-
-        let nav = UINavigationBarAppearance()
-        nav.configureWithOpaqueBackground()
-        nav.backgroundColor = pageColor
-        nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: textColor]
-        nav.largeTitleTextAttributes = [.foregroundColor: textColor]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-        UINavigationBar.appearance().compactAppearance = nav
+        AppearanceStore.configureBars()
     }
 }

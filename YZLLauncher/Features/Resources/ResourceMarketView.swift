@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// 资源市场（对齐 Windows 端 Mods / Shaders / ResourcePacks / Modpacks 页）：
+/// 资源市场（对齐 Windows 端 Mods / Shaders / ResourcePacks 页）：
 /// 从 Modrinth 在线浏览、搜索、筛选并安装模组/光影/资源包到已安装版本。
-/// 整合包请走版本页的本地导入（iOS 上在线整合包还需要 Java 安装器，暂不在此提供）。
+/// 整合包不在此安装（iOS 无 Java 安装器），点开会给出明确指引而非死路。
 struct ResourceMarketView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = ResourceMarketViewModel()
     @State private var detailProject: ModrinthProject?
+    @State private var showModpackHint = false
 
     var body: some View {
         ZStack {
@@ -18,6 +19,7 @@ struct ResourceMarketView: View {
             }
         }
         .task {
+            viewModel.setInstalledVersions(appState.installedVersions.map(\.id))
             if viewModel.results.isEmpty { await viewModel.search() }
         }
         .sheet(item: $detailProject) { project in
@@ -29,6 +31,11 @@ struct ResourceMarketView: View {
                 queue: appState.installQueue
             )
             .environmentObject(appState)
+        }
+        .alert("整合包请在版本页导入", isPresented: $showModpackHint) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("iOS 上整合包需要 Java 安装器，请在「版本 → 导入整合包」里安装 .mrpack / ZIP。这里可浏览整合包介绍，但点安装会引导到版本页。")
         }
     }
 
@@ -76,7 +83,7 @@ struct ResourceMarketView: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
-                        .foregroundStyle(viewModel.category == cat ? .white : YZLTheme.text)
+                        .foregroundStyle(viewModel.category == cat ? YZLTheme.onAccent : YZLTheme.text)
                         .background(
                             Capsule().fill(viewModel.category == cat ? YZLTheme.accent : YZLTheme.card)
                         )
@@ -91,17 +98,20 @@ struct ResourceMarketView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
                     .foregroundStyle(YZLTheme.muted)
-                TextField("搜索 \(viewModel.category.title)，回车搜索", text: $viewModel.searchText)
+                TextField("搜索 \(viewModel.category.title)（支持中文）", text: $viewModel.searchText)
                     .font(.system(size: 12))
                     .autocorrectionDisabled()
+                    // 250ms 防抖自动搜索，对齐 Windows 端 TextChanged 行为。
+                    .onChange(of: viewModel.searchText) { _ in viewModel.scheduleSearch() }
                     .onSubmit { Task { await viewModel.search() } }
 
                 Picker("游戏版本", selection: $viewModel.gameVersion) {
-                    ForEach(ResourceMarketViewModel.gameVersionOptions, id: \.self) { v in
-                        Text(v.isEmpty ? "全部版本" : v).tag(v)
+                    Text("全部版本").tag("")
+                    ForEach(viewModel.versionOptions, id: \.self) { v in
+                        Text(v).tag(v)
                     }
                 }
-                .frame(width: 120)
+                .frame(width: 110)
                 .onChange(of: viewModel.gameVersion) { _ in
                     Task { await viewModel.search() }
                 }
@@ -112,10 +122,20 @@ struct ResourceMarketView: View {
                             Text(l).tag(l)
                         }
                     }
-                    .frame(width: 100)
+                    .frame(width: 90)
                     .onChange(of: viewModel.loader) { _ in
                         Task { await viewModel.search() }
                     }
+                }
+
+                Picker("排序", selection: $viewModel.sort) {
+                    ForEach(ResourceMarketViewModel.sortOptions, id: \.value) { opt in
+                        Text(opt.title).tag(opt.value)
+                    }
+                }
+                .frame(width: 90)
+                .onChange(of: viewModel.sort) { _ in
+                    Task { await viewModel.search() }
                 }
             }
             .padding(.horizontal, 12)
@@ -132,7 +152,7 @@ struct ResourceMarketView: View {
         if viewModel.isLoading && viewModel.results.isEmpty {
             ProgressView("正在搜索 Modrinth…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.errorMessage {
+        } else if let error = viewModel.errorMessage, viewModel.results.isEmpty {
             VStack(spacing: 12) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 30))
@@ -161,13 +181,32 @@ struct ResourceMarketView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     ForEach(viewModel.results) { project in
                         ResourceCard(project: project, viewModel: viewModel) {
-                            detailProject = project
+                            if viewModel.category == .modpack {
+                                showModpackHint = true
+                            } else {
+                                detailProject = project
+                            }
                         }
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+
+                if viewModel.results.count < viewModel.totalHits {
+                    Button {
+                        Task { await viewModel.loadMore() }
+                    } label: {
+                        HStack {
+                            if viewModel.isLoadingMore { ProgressView() }
+                            Text("加载更多（已显示 \(viewModel.results.count) / \(viewModel.totalHits)）")
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle(prominent: false))
+                    .frame(width: 280)
+                    .padding(.vertical, 16)
+                    .disabled(viewModel.isLoadingMore)
+                }
             }
+            .padding(.bottom, 24)
         }
     }
 }

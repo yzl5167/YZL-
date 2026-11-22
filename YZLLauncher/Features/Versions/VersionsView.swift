@@ -160,7 +160,7 @@ struct VersionsView: View {
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(
-                    selectedVersion?.id == version.id ? YZLTheme.accentSoft : Color.white
+                    selectedVersion?.id == version.id ? YZLTheme.accentSoft : YZLTheme.card
                 )
                 .listRowSeparatorTint(YZLTheme.border)
             }
@@ -350,7 +350,7 @@ private struct VersionDetailPane: View {
                     }
                 }
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(YZLTheme.onAccent)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(Capsule().fill(YZLTheme.accent))

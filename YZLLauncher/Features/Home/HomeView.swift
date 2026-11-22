@@ -99,7 +99,7 @@ struct HomeView: View {
                 Image(systemName: "pencil.circle.fill")
                     .font(.system(size: 24))
                     .foregroundStyle(YZLTheme.accent)
-                    .background(Circle().fill(Color.white))
+                    .background(Circle().fill(YZLTheme.card))
                     .offset(x: 4, y: 4)
             }
         }
@@ -141,7 +141,7 @@ struct HomeView: View {
                 Text(appState.launchButtonTitle)
                     .font(.system(size: 16, weight: .semibold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(YZLTheme.onAccent)
             .frame(maxWidth: 300)
             .frame(height: 52)
             .background(
@@ -206,7 +206,7 @@ struct HomeView: View {
                         } label: {
                             Text("加入")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(YZLTheme.onAccent)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(

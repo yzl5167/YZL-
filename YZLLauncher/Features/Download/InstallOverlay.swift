@@ -43,7 +43,7 @@ struct InstallOverlay: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.white)
+                .fill(YZLTheme.card)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
